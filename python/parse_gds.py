@@ -148,6 +148,8 @@ def parse_gds(filepath: str) -> dict:
     provenance_by_cell = _extract_provenance(layout)
 
     top = layout.top_cell()
+    if top is None:
+        return {"type": "FeatureCollection", "features": []}
     features = []
     min_x = min_y = float("inf")
     max_x = max_y = float("-inf")
