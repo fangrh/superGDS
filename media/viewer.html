@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GDS Viewer</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10/ol.css">
+<script src="https://cdn.jsdelivr.net/npm/ol@10/dist/ol.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+#sidebar { width: 220px; background: #1e1e2e; color: #cdd6f4; overflow-y: auto; padding: 12px; flex-shrink: 0; }
+#sidebar h4 { margin: 0 0 8px 0; color: #89b4fa; font-size: 13px; }
+#sidebar button { width: 100%; margin-bottom: 8px; padding: 6px 10px; background: #45475a; color: #cdd6f4; border: 1px solid #585b70; border-radius: 4px; cursor: pointer; font-size: 12px; }
+#sidebar button:hover { background: #585b70; }
+#map-container { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#console { height: 200px; background: #11111b; color: #cdd6f4; font: 13px/1.5 'Cascadia Code', 'Fira Code', 'Consolas', monospace; overflow-y: auto; border-top: 2px solid #313244; flex-shrink: 0; transition: height 0.15s; }
+#console.collapsed { height: 32px; overflow-y: hidden; }
+#console-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: #181825; border-bottom: 1px solid #313244; cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1; }
+#console-header span { font-size: 12px; font-weight: 600; color: #89b4fa; }
+#console-header button { padding: 3px 10px; background: #45475a; color: #cdd6f4; border: 1px solid #585b70; border-radius: 3px; cursor: pointer; font-size: 11px; font-family: inherit; margin-left: 4px; }
+#console-header button:hover { background: #585b70; }
+#console-header button.copied { background: #1a6640; border-color: #2e8b57; }
+#console-header button.ask-claude { background: #5c3f82; border-color: #7b5ea7; }
+#console-header button.ask-claude:hover { background: #7b5ea7; }
+#console-body { padding: 8px 12px; }
+#console-body .kv { display: flex; gap: 8px; padding: 1px 0; }
+#console-body .kv .key { color: #6c7086; min-width: 90px; flex-shrink: 0; text-align: right; }
+#console-body .kv .val { color: #cdd6f4; word-break: break-all; }
+#console-body .kv .val.hl { color: #f9e2af; }
+#console-body .placeholder { color: #585b70; font-style: italic; padding: 20px 0; text-align: center; }
+#ask-section { display: none; padding: 8px 12px; background: #181825; border-top: 1px solid #313244; }
+#ask-section.visible { display: flex; gap: 6px; align-items: center; }
+#ask-section input { flex: 1; padding: 4px 8px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #45475a; border-radius: 3px; font: 12px monospace; }
+#ask-section input::placeholder { color: #585b70; }
+#ask-section button { padding: 4px 12px; background: #5c3f82; color: #cdd6f4; border: 1px solid #7b5ea7; border-radius: 3px; cursor: pointer; font: 12px monospace; }
+.file-item { padding: 6px 8px; cursor: pointer; border-radius: 4px; margin-bottom: 2px; font-size: 13px; word-break: break-all; }
+.file-item:hover { background: #313244; }
+.file-item.active { background: #45475a; }
+.legend-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; cursor: pointer; }
+.swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+.swatch.hidden { opacity: 0.2; }
+.tab-btn { padding: 2px 8px; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 11px; color: #6c7086; border-bottom: 2px solid transparent; }
+.tab-btn.active { color: #89b4fa; border-bottom-color: #89b4fa; }
+.tab-btn:hover { color: #cdd6f4; }
+#source-panel { height: 100%; overflow-y: auto; }
+.src-line { display: flex; font: 12px/1.6 'Cascadia Code', 'Fira Code', 'Consolas', monospace; padding: 0 8px; margin: 0; }
+.src-line.hl { background: rgba(250, 200, 80, 0.15); border-left: 3px solid #f9e2af; }
+.src-line .ln { color: #585b70; min-width: 44px; text-align: right; padding-right: 12px; user-select: none; flex-shrink: 0; }
+.src-line .code { color: #cdd6f4; white-space: pre; overflow-x: auto; }
+.ol-dragbox { border: 2px dashed #89b4fa !important; background-color: rgba(137,180,250,0.1) !important; }
+.file-section { margin: 4px 0; border: 1px solid #313244; border-radius: 4px; }
+.file-section-header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #181825; cursor: pointer; user-select: none; font-size: 12px; }
+.file-section-header:hover { background: #1e1e2e; }
+.file-section-header .arrow { color: #585b70; font-size: 10px; transition: transform 0.15s; }
+.file-section-header .arrow.open { transform: rotate(90deg); }
+.file-section-header .fname { color: #89b4fa; }
+.file-section-header .lines { color: #6c7086; margin-left: auto; }
+.file-section-body { max-height: 0; overflow: hidden; transition: max-height 0.2s; }
+.file-section-body.open { max-height: 400px; overflow-y: auto; }
+#map-row { display: flex; flex: 1; min-height: 0; }
+#draw-toolbar { width: 40px; background: #1e1e2e; border-left: 1px solid #313244; display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 4px; flex-shrink: 0; }
+.tool-btn { width: 32px; height: 32px; background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #6c7086; padding: 0; }
+.tool-btn:hover { background: #313244; color: #cdd6f4; }
+.tool-btn.active { background: #45475a; color: #89b4fa; border-color: #89b4fa; }
+.tool-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#mode-indicator { position: absolute; top: 8px; right: 8px; padding: 4px 12px; background: #1e1e2e; color: #cdd6f4; font-size: 12px; border-radius: 4px; z-index: 100; border: 1px solid #313244; }
+#mode-indicator.partial { border-color: #e17055; color: #e17055; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+    <h4>GDS File</h4>
+    <div id="file-info" style="color:#6c7086;font-size:12px;margin-bottom:8px;"></div>
+    <button onclick="fitView()">Fit View</button>
+    <div id="mode-indicator">Loading...</div>
+    <div class="legend-section" id="legend"></div>
+</div>
+<div id="map-container">
+    <div id="map-row">
+        <div id="map" style="flex:1;"></div>
+        <div id="draw-toolbar">
+            <button class="tool-btn active" data-mode="select" title="Select (1)" onclick="setMode('select')">
+                <svg viewBox="0 0 24 24"><path d="M5 3l14 9-7 2-3 7z"/></svg>
+            </button>
+            <button class="tool-btn" data-mode="rectangle" title="Rectangle (2)" onclick="setMode('rectangle')">
+                <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+            </button>
+            <button class="tool-btn" data-mode="circle" title="Circle (3)" onclick="setMode('circle')">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
+            </button>
+            <button class="tool-btn" data-mode="line" title="Line (4)" onclick="setMode('line')">
+                <svg viewBox="0 0 24 24"><line x1="5" y1="19" x2="19" y2="5"/></svg>
+            </button>
+            <button class="tool-btn" data-mode="polygon" title="Polygon (5)" onclick="setMode('polygon')">
+                <svg viewBox="0 0 24 24"><path d="M12 3l9 7-3 10H6L3 10z"/></svg>
+            </button>
+            <div style="height:1px;width:24px;background:#313244;margin:4px 0;"></div>
+            <button class="tool-btn" data-mode="delete" title="Delete drawn" onclick="deleteDrawn()">
+                <svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+            </button>
+            <button class="tool-btn" data-mode="snap" title="Snap (S)" onclick="toggleSnap()">
+                <svg viewBox="0 0 24 24"><path d="M6 16c0-3.3 2.7-6 6-6s6 2.7 6 6v3H6z"/><line x1="12" y1="3" x2="12" y2="7"/></svg>
+            </button>
+        </div>
+    </div>
+    <div id="ask-section">
+        <input type="text" id="ask-input" placeholder="Ask Claude about selected components..." onkeydown="if(event.key==='Enter')sendAskClaude()">
+        <button onclick="sendAskClaude()">Ask Claude</button>
+    </div>
+    <div id="console">
+        <div id="console-header">
+            <span style="display:flex;align-items:center;gap:2px;">
+                <span class="tab-btn active" data-tab="info" onclick="switchTab(event, 'info')">Info</span>
+                <span class="tab-btn" data-tab="source" onclick="switchTab(event, 'source')">Source</span>
+            </span>
+            <span style="display:flex;align-items:center;gap:6px;">
+                <button id="ask-claude-btn" class="ask-claude" onclick="showAskSection()" title="Ask Claude about selection">Ask Claude</button>
+                <button id="copy-btn" onclick="copyYAML(event)">Copy YAML</button>
+                <span onclick="toggleConsole()" title="Collapse" style="cursor:pointer;color:#6c7086;font-size:14px;">&#9660;</span>
+            </span>
+        </div>
+        <div id="console-body">
+            <div id="info-panel"><p class="placeholder">Click a polygon to inspect</p></div>
+            <div id="source-panel" style="display:none;"><p class="placeholder">Click a polygon, then switch to Source tab to view code</p></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// VS Code Webview API
+// ============================================================
+const vscode = acquireVsCodeApi();
+
+// ============================================================
+// State
+// ============================================================
+var repo = '';
+var branch = '';
+var currentFilePath = '';
+var currentGdsPath = '';
+var currentMode2 = 'partial';
+var selectedFeatures = new ol.Collection();
+var ctrlPressed = false;
+var activeTab = 'info';
+var sourceCache = {};   // filePath -> source code string
+var expandedFiles = {}; // filePath -> true/false
+var allFeatures = [];
+var layerColors = {};
+
+var currentMode = 'select';
+var snapActive = false;
+var drawInteractions = {};
+
+var drawSource = new ol.source.Vector();
+
+var drawStyleDefault = new ol.style.Style({
+    stroke: new ol.style.Stroke({ color: '#f38ba8', width: 2, lineDash: [8, 4] }),
+    fill: new ol.style.Fill({ color: 'rgba(243, 139, 168, 0.1)' })
+});
+
+var drawStyleSelected = new ol.style.Style({
+    stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 }),
+    fill: new ol.style.Fill({ color: 'rgba(243, 139, 168, 0.3)' })
+});
+
+var drawLayer = new ol.layer.Vector({
+    source: drawSource,
+    style: function(feature) {
+        return feature.get('selected') ? drawStyleSelected : drawStyleDefault;
+    }
+});
+
+// ============================================================
+// Keyboard handling
+// ============================================================
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Control' || e.key === 'Meta') ctrlPressed = true;
+    if (e.key === 'Escape') {
+        if (currentMode !== 'select') {
+            setMode('select');
+        }
+        clearSelection();
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedFeatures.getArray().some(function(f) { return f.get('isDrawn'); })) {
+            e.preventDefault();
+            deleteDrawn();
+        }
+    }
+    if (e.key === '1') setMode('select');
+    if (e.key === '2') setMode('rectangle');
+    if (e.key === '3') setMode('circle');
+    if (e.key === '4') setMode('line');
+    if (e.key === '5') setMode('polygon');
+    if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) toggleSnap();
+});
+document.addEventListener('keyup', function(e) {
+    if (e.key === 'Control' || e.key === 'Meta') ctrlPressed = false;
+});
+
+// ============================================================
+// Selection management
+// ============================================================
+function addToSelection(features) {
+    features.forEach(function(f) {
+        if (!selectedFeatures.getArray().includes(f)) {
+            selectedFeatures.push(f);
+            f.set('selected', true);
+        }
+    });
+}
+
+function removeFromSelection(features) {
+    features.forEach(function(f) {
+        selectedFeatures.remove(f);
+        f.set('selected', false);
+    });
+}
+
+function replaceSelection(features) {
+    selectedFeatures.forEach(function(f) { f.set('selected', false); });
+    selectedFeatures.clear();
+    features.forEach(function(f) {
+        selectedFeatures.push(f);
+        f.set('selected', true);
+    });
+}
+
+function clearSelection() {
+    selectedFeatures.forEach(function(f) { f.set('selected', false); });
+    selectedFeatures.clear();
+    vectorLayer.changed();
+    drawLayer.changed();
+    onSelectionChanged();
+}
+
+// ============================================================
+// Mode switching
+// ============================================================
+function setMode(mode) {
+    if (mode === currentMode && mode !== 'select') {
+        mode = 'select';
+    }
+    currentMode = mode;
+
+    Object.keys(drawInteractions).forEach(function(key) {
+        drawInteractions[key].setActive(false);
+    });
+
+    var isDrawMode = (mode !== 'select');
+    selectClick.setActive(!isDrawMode);
+    dragBox.setActive(!isDrawMode);
+
+    if (isDrawMode && drawInteractions[mode]) {
+        drawInteractions[mode].setActive(true);
+    }
+
+    document.querySelectorAll('.tool-btn[data-mode]').forEach(function(btn) {
+        if (btn.dataset.mode === 'snap' || btn.dataset.mode === 'delete') return;
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+}
+
+function deleteDrawn() {
+    var drawn = selectedFeatures.getArray().filter(function(f) { return f.get('isDrawn'); });
+    if (drawn.length === 0) return;
+    drawn.forEach(function(f) {
+        selectedFeatures.remove(f);
+        drawSource.removeFeature(f);
+    });
+    drawLayer.changed();
+    onSelectionChanged();
+}
+
+// ============================================================
+// Selection changed handler
+// ============================================================
+function onSelectionChanged() {
+    var features = selectedFeatures.getArray();
+    var count = features.length;
+
+    var hasDrawn = count > 0 && features.some(function(f) { return f.get('isDrawn'); });
+    modifyInteraction.setActive(hasDrawn);
+    translateInteraction.setActive(hasDrawn);
+
+    if (count === 0) {
+        clearInspect();
+        return;
+    }
+
+    var drawnFeatures = features.filter(function(f) { return f.get('isDrawn'); });
+    var gdsFeatures = features.filter(function(f) { return !f.get('isDrawn'); });
+
+    if (drawnFeatures.length > 0 && gdsFeatures.length === 0) {
+        if (drawnFeatures.length === 1) {
+            showDrawnInspect(drawnFeatures[0]);
+        } else {
+            showDrawnMultiInspect(drawnFeatures);
+        }
+    } else if (drawnFeatures.length === 0) {
+        if (gdsFeatures.length === 1) {
+            showInspect(gdsFeatures[0]);
+        } else {
+            showMultiInspect(gdsFeatures);
+        }
+    } else {
+        showMixedInspect(gdsFeatures, drawnFeatures);
+    }
+}
+
+// ============================================================
+// Multi-inspect and source panel
+// ============================================================
+function showMultiInspect(features) {
+    var panel = document.getElementById('info-panel');
+    panel.innerHTML = '';
+
+    var countDiv = document.createElement('div');
+    countDiv.className = 'kv';
+    countDiv.innerHTML = '<span class="key">selected</span><span class="val">Selected: ' + features.length + ' components</span>';
+    panel.appendChild(countDiv);
+
+    if (features.length > 50) {
+        var warn = document.createElement('div');
+        warn.className = 'kv';
+        warn.innerHTML = '<span class="key"></span><span class="val hl">Large selection (' + features.length + ' components). Performance may be affected.</span>';
+        panel.appendChild(warn);
+    }
+
+    var fileMap = {};
+    features.forEach(function(f) {
+        var prov = f.get('provenance') || {};
+        if (prov.file && prov.line) {
+            var filePath = prov.file.replace(/\\/g, '/');
+            if (!fileMap[filePath]) fileMap[filePath] = [];
+            var ln = parseInt(prov.line);
+            if (fileMap[filePath].indexOf(ln) === -1) fileMap[filePath].push(ln);
+        }
+        // Add call chain files so AI agents see the full compilation chain
+        var chain = _normalizeCallChain(prov);
+        chain.forEach(function(cc) {
+            var cfp = (cc.file || '').replace(/\\/g, '/');
+            if (cfp && !fileMap[cfp]) fileMap[cfp] = [];
+            if (cfp && fileMap[cfp].indexOf(cc.line) === -1) fileMap[cfp].push(cc.line);
+        });
+    });
+
+    addSep(panel);
+
+    var fileKeys = Object.keys(fileMap);
+    if (fileKeys.length > 0) {
+        addKV(panel, 'files', fileKeys.length + ' file(s) with provenance');
+        fileKeys.forEach(function(fp) {
+            var base = fp.split('/').pop();
+            addKV(panel, '', base + ': lines [' + fileMap[fp].sort(function(a,b){return a-b;}).join(', ') + ']');
+        });
+    } else {
+        addKV(panel, 'provenance', 'No provenance data in selection');
+    }
+
+    // Build component list with bbox, grouped by file
+    var componentList = [];
+    features.forEach(function(f, idx) {
+        var meta = f.get('meta') || {};
+        var bbox = meta.bbox || [];
+        var prov = f.get('provenance') || {};
+        componentList.push({
+            idx: idx + 1,
+            file: prov.file || '',
+            line: prov.line ? parseInt(prov.line) : null,
+            bbox: bbox
+        });
+    });
+
+    // Sort by line number (nulls go to end)
+    componentList.sort(function(a, b) {
+        if (a.line === null && b.line === null) return a.idx - b.idx;
+        if (a.line === null) return 1;
+        if (b.line === null) return -1;
+        return a.line - b.line;
+    });
+
+    // Display grouped by file
+    if (componentList.length > 0) {
+        addSep(panel);
+        addKV(panel, 'components', componentList.length + ' component(s)');
+
+        // Group by file
+        var fileGroups = {};
+        componentList.forEach(function(comp) {
+            var key = comp.file || '__no_provenance__';
+            if (!fileGroups[key]) fileGroups[key] = [];
+            fileGroups[key].push(comp);
+        });
+
+        // Display each file group
+        Object.keys(fileGroups).forEach(function(fileKey) {
+            var comps = fileGroups[fileKey];
+            var base = fileKey ? fileKey.split('/').pop() : '';
+            if (base) {
+                addKV(panel, '', base + ':');
+            }
+            comps.forEach(function(comp, ci) {
+                var bboxStr = '[' + comp.bbox.map(function(v) { return v.toFixed(4); }).join(', ') + ']';
+                var lineNum = comp.line !== null ? comp.line : '?';
+                addKV(panel, '', '  Component ' + (ci + 1) + ': Line ' + lineNum + ', bbox:' + bboxStr);
+            });
+        });
+    }
+
+    addSep(panel);
+    addKV(panel, 'repo', repo);
+    addKV(panel, 'ref', branch);
+    addKV(panel, 'path', currentFilePath);
+
+    updateMultiSourcePanel(fileMap);
+}
+
+function updateMultiSourcePanel(fileMap) {
+    var panel = document.getElementById('source-panel');
+    panel.innerHTML = '';
+
+    var fileKeys = Object.keys(fileMap);
+    if (fileKeys.length === 0) {
+        panel.innerHTML = '<p class="placeholder">No provenance data in selection</p>';
+        return;
+    }
+
+    fileKeys.forEach(function(fp) {
+        var section = document.createElement('div');
+        section.className = 'file-section';
+        section.setAttribute('data-file', fp);
+
+        var base = fp.split('/').pop();
+        var lines = fileMap[fp].sort(function(a,b){return a-b;});
+        var isOpen = expandedFiles[fp] || false;
+
+        var header = document.createElement('div');
+        header.className = 'file-section-header';
+        header.innerHTML = '<span class="arrow' + (isOpen ? ' open' : '') + '">&#9654;</span>'
+            + '<span class="fname">' + esc(base) + '</span>'
+            + '<span class="lines">lines [' + lines.join(', ') + ']</span>';
+
+        var body = document.createElement('div');
+        body.className = 'file-section-body' + (isOpen ? ' open' : '');
+
+        header.onclick = (function(filePath, bodyEl) {
+            return function() { toggleFileSection(filePath, bodyEl); };
+        })(fp, body);
+
+        if (isOpen) {
+            loadFileSource(fp, body, lines);
+        } else {
+            body.innerHTML = '';
+        }
+
+        section.appendChild(header);
+        section.appendChild(body);
+        panel.appendChild(section);
+    });
+}
+
+function toggleFileSection(filePath, bodyEl) {
+    var isOpen = expandedFiles[filePath] || false;
+    expandedFiles[filePath] = !isOpen;
+
+    var section = bodyEl.parentElement;
+    var arrow = section.querySelector('.arrow');
+    if (!isOpen) {
+        bodyEl.classList.add('open');
+        arrow.classList.add('open');
+        var linesText = section.querySelector('.lines').textContent;
+        var match = linesText.match(/\[(.+)\]/);
+        var lines = match ? match[1].split(', ').map(Number) : [];
+        loadFileSource(filePath, bodyEl, lines);
+    } else {
+        bodyEl.classList.remove('open');
+        arrow.classList.remove('open');
+    }
+}
+
+function loadFileSource(filePath, container, highlightLines) {
+    if (sourceCache[filePath]) {
+        renderSourceLines(sourceCache[filePath], container, highlightLines);
+        return;
+    }
+
+    container.innerHTML = '<p class="placeholder" style="padding:8px;">Loading...</p>';
+
+    var url = '/source?repo=' + encodeURIComponent(repo) + '&ref=' + branch
+        + '&path=' + encodeURIComponent(filePath);
+
+    fetch(url).then(function(r) {
+        if (!r.ok) throw Error('HTTP ' + r.status);
+        return r.text();
+    }).then(function(code) {
+        sourceCache[filePath] = code;
+        renderSourceLines(code, container, highlightLines);
+    }).catch(function(e) {
+        container.innerHTML = '<p class="placeholder">Failed to load source: ' + esc(e.message) + '</p>';
+    });
+}
+
+function renderSourceLines(code, container, highlightLines) {
+    var lines = code.split('\n');
+    var html = '';
+    for (var i = 0; i < lines.length; i++) {
+        var ln = i + 1;
+        var cls = highlightLines.indexOf(ln) !== -1 ? 'src-line hl' : 'src-line';
+        html += '<div class="' + cls + '"><span class="ln">' + ln + '</span><span class="code">' + esc(lines[i]) + '</span></div>';
+    }
+    container.innerHTML = html;
+
+    var firstHl = container.querySelector('.src-line.hl');
+    if (firstHl) {
+        firstHl.scrollIntoView({ block: 'center' });
+    }
+}
+
+// ============================================================
+// GDS GeoJSON format, source, and vector layer
+// ============================================================
+// GDS coordinates are in micrometers (um).  Prevent OpenLayers from
+// treating them as EPSG:4326 degrees and running them through the
+// Web-Mercator forward transform, which distorts and clips small values.
+var gdsGeoJsonFmt = new ol.format.GeoJSON({
+    dataProjection: 'EPSG:3857',
+    featureProjection: 'EPSG:3857',
+});
+
+var source = new ol.source.Vector();
+
+// Highlight style for selected feature
+var highlightStyle = new ol.style.Style({
+    stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 }),
+    fill: new ol.style.Fill({ color: 'rgba(255,255,255,0.3)' })
+});
+
+var vectorLayer = new ol.layer.Vector({
+    source: source,
+    style: function(feature) {
+        var selected = feature.get('selected');
+        if (selected) return highlightStyle;
+        var color = feature.get('color') || '#fff';
+        var visible = feature.get('visible') !== false;
+        if (!visible) return new ol.style.Style({});
+        return new ol.style.Style({
+            stroke: new ol.style.Stroke({ color: color, width: 1 }),
+            fill: new ol.style.Fill({ color: color + '80' })
+        });
+    }
+});
+
+// ============================================================
+// Map setup
+// ============================================================
+var map = new ol.Map({
+    target: 'map',
+    layers: [vectorLayer, drawLayer],
+    view: new ol.View({ center: [0, 0], zoom: 2, minZoom: -20, maxZoom: 40 }),
+    controls: [new ol.control.Zoom()]
+});
+
+// Select interaction -- multi-select capable
+var selectClick = new ol.interaction.Select({
+    layers: [vectorLayer, drawLayer],
+    style: null,  // use layer style function
+    multi: true
+});
+map.addInteraction(selectClick);
+
+selectClick.on('select', function(e) {
+    var clicked = e.selected.length > 0 ? e.selected[0] : null;
+
+    if (clicked) {
+        var alreadySelected = selectedFeatures.getArray().includes(clicked);
+        if (ctrlPressed) {
+            if (alreadySelected) {
+                removeFromSelection([clicked]);
+            } else {
+                addToSelection([clicked]);
+            }
+        } else {
+            replaceSelection([clicked]);
+        }
+    } else {
+        clearSelection();
+        return;
+    }
+
+    selectClick.getFeatures().clear();
+    vectorLayer.changed();
+    drawLayer.changed();
+    onSelectionChanged();
+});
+
+// DragBox interaction for area selection
+var dragBox = new ol.interaction.DragBox({
+    condition: function(mapBrowserEvent) {
+        return ol.events.condition.mouseActionButton(mapBrowserEvent) &&
+               ol.events.condition.noModifierKeys(mapBrowserEvent) ||
+               ol.events.condition.platformModifierKeyOnly(mapBrowserEvent);
+    }
+});
+map.addInteraction(dragBox);
+
+var dragStartPixel = null;
+
+dragBox.on('boxstart', function(e) {
+    dragStartPixel = e.mapBrowserEvent.pixel;
+});
+
+dragBox.on('boxend', function(e) {
+    var extent = dragBox.getGeometry().getExtent();
+    var endPixel = e.mapBrowserEvent.pixel;
+    var dragDist = Math.sqrt(
+        Math.pow(endPixel[0] - dragStartPixel[0], 2) +
+        Math.pow(endPixel[1] - dragStartPixel[1], 2)
+    );
+
+    if (dragDist < 5) return;
+
+    var featuresInBox = [];
+    source.forEachFeatureInExtent(extent, function(f) {
+        if (f.get('visible') !== false) {
+            var geom = f.getGeometry();
+            if (geom && ol.extent.intersects(extent, geom.getExtent())) {
+                featuresInBox.push(f);
+            }
+        }
+    });
+    drawSource.forEachFeatureInExtent(extent, function(f) {
+        var geom = f.getGeometry();
+        if (geom && ol.extent.intersects(extent, geom.getExtent())) {
+            featuresInBox.push(f);
+        }
+    });
+
+    if (ctrlPressed) {
+        addToSelection(featuresInBox);
+    } else {
+        replaceSelection(featuresInBox);
+    }
+
+    vectorLayer.changed();
+    drawLayer.changed();
+    onSelectionChanged();
+});
+
+// --- Draw interactions ---
+var drawRectangle = new ol.interaction.Draw({
+    source: drawSource,
+    type: 'Circle',
+    geometryFunction: ol.interaction.Draw.createBox()
+});
+drawRectangle.setActive(false);
+map.addInteraction(drawRectangle);
+drawInteractions['rectangle'] = drawRectangle;
+
+var drawCircle = new ol.interaction.Draw({
+    source: drawSource,
+    type: 'Circle'
+});
+drawCircle.setActive(false);
+map.addInteraction(drawCircle);
+drawInteractions['circle'] = drawCircle;
+
+var drawLine = new ol.interaction.Draw({
+    source: drawSource,
+    type: 'LineString'
+});
+drawLine.setActive(false);
+map.addInteraction(drawLine);
+drawInteractions['line'] = drawLine;
+
+var drawPolygon = new ol.interaction.Draw({
+    source: drawSource,
+    type: 'Polygon'
+});
+drawPolygon.setActive(false);
+map.addInteraction(drawPolygon);
+drawInteractions['polygon'] = drawPolygon;
+
+Object.keys(drawInteractions).forEach(function(key) {
+    drawInteractions[key].on('drawend', function(e) {
+        var feature = e.feature;
+        feature.set('isDrawn', true);
+        feature.set('shapeType', key);
+        feature.set('selected', false);
+        setTimeout(function() { setMode('select'); }, 50);
+    });
+});
+
+// Modify interaction for drawn shape vertices
+var modifyInteraction = new ol.interaction.Modify({
+    source: drawSource,
+    style: new ol.style.Style({
+        image: new ol.style.Circle({
+            radius: 5,
+            fill: new ol.style.Fill({ color: '#f38ba8' }),
+            stroke: new ol.style.Stroke({ color: '#ffffff', width: 1 })
+        })
+    })
+});
+modifyInteraction.setActive(false);
+map.addInteraction(modifyInteraction);
+
+// Translate interaction for moving drawn shapes
+var translateInteraction = new ol.interaction.Translate({
+    layers: [drawLayer]
+});
+translateInteraction.setActive(false);
+map.addInteraction(translateInteraction);
+
+// Snap
+var gridSource = new ol.source.Vector();
+var snapGds = new ol.interaction.Snap({ source: source, pixelTolerance: 10 });
+var snapDraw = new ol.interaction.Snap({ source: drawSource, pixelTolerance: 10 });
+var snapGrid = new ol.interaction.Snap({ source: gridSource, pixelTolerance: 10 });
+snapGds.setActive(false);
+snapDraw.setActive(false);
+snapGrid.setActive(false);
+map.addInteraction(snapGds);
+map.addInteraction(snapDraw);
+map.addInteraction(snapGrid);
+
+function toggleSnap() {
+    snapActive = !snapActive;
+    snapGds.setActive(snapActive);
+    snapDraw.setActive(snapActive);
+    snapGrid.setActive(snapActive);
+
+    var btn = document.querySelector('.tool-btn[data-mode="snap"]');
+    btn.classList.toggle('active', snapActive);
+
+    if (snapActive) {
+        updateGridSnap();
+    } else {
+        gridSource.clear();
+    }
+}
+
+function updateGridSnap() {
+    if (!snapActive) return;
+
+    var view = map.getView();
+    var resolution = view.getResolution();
+    var extent = view.calculateExtent(map.getSize());
+
+    var rawSpacing = resolution * 80;
+    var exponent = Math.floor(Math.log10(rawSpacing));
+    var spacing = Math.pow(10, exponent);
+
+    var minX = Math.floor(extent[0] / spacing) * spacing;
+    var minY = Math.floor(extent[1] / spacing) * spacing;
+    var maxX = Math.ceil(extent[2] / spacing) * spacing;
+    var maxY = Math.ceil(extent[3] / spacing) * spacing;
+
+    var maxPoints = 2000;
+    var countX = Math.round((maxX - minX) / spacing) + 1;
+    var countY = Math.round((maxY - minY) / spacing) + 1;
+    if (countX * countY > maxPoints) return;
+
+    gridSource.clear();
+    for (var x = minX; x <= maxX; x += spacing) {
+        for (var y = minY; y <= maxY; y += spacing) {
+            var pt = new ol.Feature({ geometry: new ol.geom.Point([x, y]) });
+            gridSource.addFeature(pt);
+        }
+    }
+}
+
+map.getView().on('change:resolution', function() {
+    if (snapActive) updateGridSnap();
+});
+map.on('moveend', function() {
+    if (snapActive) updateGridSnap();
+});
+
+// ============================================================
+// fitView
+// ============================================================
+function fitView() {
+    var extent = source.getExtent();
+    if (extent && isFinite(extent[0])) {
+        map.getView().fit(extent, { padding: [40, 40, 40, 40], duration: 300 });
+    }
+}
+
+// ============================================================
+// Load GDS data (receives GeoJSON from extension via postMessage)
+// ============================================================
+function loadGdsData(geojson, gdsPath, mode) {
+    currentGdsPath = gdsPath;
+    currentFilePath = gdsPath;
+    currentMode2 = mode;
+    source.clear();
+    allFeatures = [];
+    layerColors = {};
+    sourceCache = {};
+    expandedFiles = {};
+
+    var indicator = document.getElementById('mode-indicator');
+    if (mode === 'full') {
+        indicator.textContent = 'Provenance: ON';
+        indicator.className = '';
+    } else {
+        indicator.textContent = 'Provenance: OFF';
+        indicator.className = 'partial';
+    }
+
+    var fileName = gdsPath.split(/[/\\]/).pop();
+    document.getElementById('file-info').textContent = fileName;
+
+    geojson.features.forEach(function(feature) {
+        var props = feature.properties || {};
+        var key = props.layer + '/' + props.data_type;
+        layerColors[key] = props.color;
+        var geom = gdsGeoJsonFmt.readGeometry(feature.geometry);
+        var f = new ol.Feature({ geometry: geom });
+        f.set('layer', key);
+        f.set('color', props.color);
+        f.set('layerKey', key);
+        f.set('visible', true);
+        f.set('selected', false);
+        f.set('provenance', props.provenance || {});
+        f.set('meta', {
+            area_um2: props.area_um2,
+            vertex_count: props.vertex_count,
+            bbox: props.bbox || []
+        });
+        allFeatures.push(f);
+        source.addFeature(f);
+    });
+
+    if (allFeatures.length > 0) fitView();
+    clearInspect();
+    buildLegend();
+
+    var askBtn = document.getElementById('ask-claude-btn');
+    askBtn.style.display = (mode === 'full') ? '' : 'none';
+}
+
+// ============================================================
+// Utility functions
+// ============================================================
+function polyMeta(ring) {
+    var xs = ring.map(function(p) { return p[0]; });
+    var ys = ring.map(function(p) { return p[1]; });
+    var area = 0;
+    for (var i = 0; i < xs.length - 1; i++) area += xs[i] * ys[i+1] - xs[i+1] * ys[i];
+    area = Math.abs(area) / 2;
+    return {
+        area_um2: Math.round(area * 1e4) / 1e4,
+        vertex_count: ring.length - 1,
+        bbox: [min(xs), min(ys), max(xs), max(ys)]
+    };
+}
+
+function min(arr) { return arr.reduce(function(a, b) { return Math.min(a, b); }); }
+function max(arr) { return arr.reduce(function(a, b) { return Math.max(a, b); }); }
+
+// ============================================================
+// Legend
+// ============================================================
+function buildLegend() {
+    var existing = document.querySelector('.legend-section');
+    if (existing) existing.remove();
+    var keys = Object.keys(layerColors);
+    if (!keys.length) return;
+    var div = document.createElement('div');
+    div.className = 'legend-section';
+    div.style.marginTop = '12px';
+    div.innerHTML = '<h4 style="margin:0 0 6px 0;color:#89b4fa;">Layers</h4>';
+    keys.forEach(function(key) {
+        var row = document.createElement('div');
+        row.className = 'legend-row';
+        row.innerHTML = '<span class="swatch" style="background:' + layerColors[key] + ';" data-key="' + key + '"></span> ' + key;
+        row.onclick = function() {
+            var swatch = row.querySelector('.swatch');
+            var hidden = swatch.classList.toggle('hidden');
+            allFeatures.forEach(function(f) { if (f.get('layerKey') === key) f.set('visible', !hidden); });
+            vectorLayer.changed();
+        };
+        div.appendChild(row);
+    });
+    document.getElementById('sidebar').appendChild(div);
+}
+
+// ============================================================
+// Call chain helpers
+// ============================================================
+function _normalizeCallChain(prov) {
+    // Handle call_chain (from provenance_inject.py): array of {file, function, line}
+    if (prov.call_chain && Array.isArray(prov.call_chain)) {
+        return prov.call_chain.map(function(cc) {
+            return { file: cc.file || '', function: cc.function || '', line: parseInt(cc.line) || 0 };
+        });
+    }
+    // Handle call_stack (from provenance.py): array of "file:line in function"
+    if (prov.call_stack && Array.isArray(prov.call_stack)) {
+        return prov.call_stack.map(function(cs) {
+            var m = cs.match(/^(.+?):(\d+)\s+in\s+(.+)$/);
+            if (m) return { file: m[1], line: parseInt(m[2]), function: m[3] };
+            return { file: cs, line: 0, function: '' };
+        });
+    }
+    return [];
+}
+
+// ============================================================
+// Console panel -- showInspect
+// ============================================================
+function showInspect(feature) {
+    var layer = feature.get('layer') || '?';
+    var provenance = feature.get('provenance') || {};
+    var meta = feature.get('meta') || {};
+    var bbox = meta.bbox || [];
+
+    var panel = document.getElementById('info-panel');
+    panel.innerHTML = '';
+    var d = frag();
+    addKV(d, 'layer', layer);
+    addKV(d, 'area', (meta.area_um2 || '?') + ' um2');
+    addKV(d, 'bbox', '[' + bbox.map(function(v) { return v.toFixed(4); }).join(', ') + ']');
+    addKV(d, 'vertices', String(meta.vertex_count || '?'));
+
+    if (Object.keys(provenance).length > 0) {
+        addSep(d);
+        if (provenance.instance_name) addKV(d, 'instance', provenance.instance_name, true);
+        if (provenance.cell) addKV(d, 'cell', provenance.cell);
+        if (provenance.file) addKV(d, 'file', provenance.file + ':' + provenance.line);
+        if (provenance.function && provenance.function !== '<module>') addKV(d, 'function', provenance.function + '()');
+        if (provenance.class_name) addKV(d, 'class', provenance.class_name);
+        if (provenance.call_index) addKV(d, 'call_index', String(provenance.call_index));
+        var chain = _normalizeCallChain(provenance);
+        if (chain.length > 0) {
+            addSep(d);
+            addKV(d, 'call chain', '');
+            chain.forEach(function(cc) {
+                var loc = (cc.file || '') + ':' + (cc.line || '?');
+                var fn = cc.function ? ' <- ' + cc.function + '()' : '';
+                addKV(d, '', loc + fn);
+            });
+        }
+    }
+
+    addSep(d);
+    addKV(d, 'repo', repo);
+    addKV(d, 'ref', branch);
+    addKV(d, 'path', currentFilePath);
+    panel.appendChild(d);
+
+    var sp = document.getElementById('source-panel');
+    if (provenance.file) {
+        var fileMap = {};
+        var fp = provenance.file.replace(/\\/g, '/');
+        fileMap[fp] = [parseInt(provenance.line)];
+        // Add call chain files so AI agents see the full compilation chain
+        var chain = _normalizeCallChain(provenance);
+        chain.forEach(function(cc) {
+            var cfp = (cc.file || '').replace(/\\/g, '/');
+            if (cfp && !fileMap[cfp]) fileMap[cfp] = [];
+            if (cfp && fileMap[cfp].indexOf(cc.line) === -1) fileMap[cfp].push(cc.line);
+        });
+        updateMultiSourcePanel(fileMap);
+    } else {
+        sp.innerHTML = '<p class="placeholder">No provenance data in this GDS file.<br><small style="color:#585b70;">Rebuild the GDS with the latest gdsfactory to enable source inspection.</small></p>';
+    }
+}
+
+function clearInspect() {
+    document.getElementById('info-panel').innerHTML = '<p class="placeholder">Click a polygon to inspect</p>';
+    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Click a polygon, then switch to Source tab to view code<br><small style="color:#585b70;">Requires provenance data embedded in the GDS file.</small></p>';
+}
+
+function switchTab(e, tab) {
+    e.stopPropagation();
+    activeTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    document.getElementById('info-panel').style.display = tab === 'info' ? '' : 'none';
+    document.getElementById('source-panel').style.display = tab === 'source' ? '' : 'none';
+}
+
+function addKV(parent, key, val, hl) {
+    var row = document.createElement('div');
+    row.className = 'kv';
+    row.innerHTML = '<span class="key">' + esc(key) + '</span><span class="val' + (hl ? ' hl' : '') + '">' + esc(val) + '</span>';
+    parent.appendChild(row);
+}
+
+function addSep(parent) {
+    var sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:#313244;margin:4px 0;';
+    parent.appendChild(sep);
+}
+
+function frag() { return document.createDocumentFragment(); }
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// ============================================================
+// Drawn shape geometry utils
+// ============================================================
+function getShapeGeom(feature) {
+    var type = feature.get('shapeType');
+    var geom = feature.getGeometry();
+    var result = { type: type };
+
+    if (type === 'rectangle' || type === 'polygon') {
+        var coords = geom.getCoordinates()[0];
+        result.coordinates = coords.slice(0, -1).map(function(c) { return [Math.round(c[0] * 100) / 100, Math.round(c[1] * 100) / 100]; });
+        var ext = geom.getExtent();
+        result.bbox = [Math.round(ext[0] * 100) / 100, Math.round(ext[1] * 100) / 100, Math.round(ext[2] * 100) / 100, Math.round(ext[3] * 100) / 100];
+        result.width = Math.round((ext[2] - ext[0]) * 100) / 100;
+        result.height = Math.round((ext[3] - ext[1]) * 100) / 100;
+        result.center = [Math.round((ext[0] + ext[2]) / 2 * 100) / 100, Math.round((ext[1] + ext[3]) / 2 * 100) / 100];
+        var area = 0;
+        for (var i = 0; i < coords.length - 1; i++) {
+            area += coords[i][0] * coords[i + 1][1] - coords[i + 1][0] * coords[i][1];
+        }
+        result.area = Math.round(Math.abs(area) / 2 * 100) / 100;
+    } else if (type === 'circle') {
+        var center = geom.getCenter();
+        var radius = geom.getRadius();
+        result.center = [Math.round(center[0] * 100) / 100, Math.round(center[1] * 100) / 100];
+        result.radius = Math.round(radius * 100) / 100;
+        result.bbox = [
+            Math.round((center[0] - radius) * 100) / 100,
+            Math.round((center[1] - radius) * 100) / 100,
+            Math.round((center[0] + radius) * 100) / 100,
+            Math.round((center[1] + radius) * 100) / 100
+        ];
+    } else if (type === 'line') {
+        var coords = geom.getCoordinates();
+        result.coordinates = coords.map(function(c) { return [Math.round(c[0] * 100) / 100, Math.round(c[1] * 100) / 100]; });
+        var len = 0;
+        for (var i = 1; i < coords.length; i++) {
+            var dx = coords[i][0] - coords[i - 1][0];
+            var dy = coords[i][1] - coords[i - 1][1];
+            len += Math.sqrt(dx * dx + dy * dy);
+        }
+        result.length = Math.round(len * 100) / 100;
+    }
+
+    return result;
+}
+
+// ============================================================
+// Drawn shape inspection
+// ============================================================
+function showDrawnInspect(feature) {
+    var panel = document.getElementById('info-panel');
+    panel.innerHTML = '';
+
+    var sg = getShapeGeom(feature);
+    var d = frag();
+    addKV(d, 'type', sg.type, true);
+    if (sg.coordinates) addKV(d, 'coordinates', JSON.stringify(sg.coordinates));
+    if (sg.bbox) addKV(d, 'bbox', JSON.stringify(sg.bbox));
+    if (sg.width !== undefined) addKV(d, 'width', sg.width + ' um');
+    if (sg.height !== undefined) addKV(d, 'height', sg.height + ' um');
+    if (sg.radius !== undefined) addKV(d, 'radius', sg.radius + ' um');
+    if (sg.length !== undefined) addKV(d, 'length', sg.length + ' um');
+    if (sg.area !== undefined) addKV(d, 'area', sg.area + ' um2');
+    if (sg.center) addKV(d, 'center', JSON.stringify(sg.center));
+    panel.appendChild(d);
+
+    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Drawn shape -- no source code</p>';
+}
+
+function showDrawnMultiInspect(features) {
+    var panel = document.getElementById('info-panel');
+    panel.innerHTML = '';
+
+    addKV(panel, 'selected', 'Selected: ' + features.length + ' drawn shapes');
+
+    features.forEach(function(f, idx) {
+        addSep(panel);
+        var sg = getShapeGeom(f);
+        addKV(panel, 'shape ' + (idx + 1), sg.type, true);
+        if (sg.bbox) addKV(panel, 'bbox', JSON.stringify(sg.bbox));
+        if (sg.width !== undefined) addKV(panel, 'size', sg.width + ' x ' + sg.height + ' um');
+        if (sg.radius !== undefined) addKV(panel, 'radius', sg.radius + ' um');
+        if (sg.length !== undefined) addKV(panel, 'length', sg.length + ' um');
+        if (sg.area !== undefined) addKV(panel, 'area', sg.area + ' um2');
+    });
+
+    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Drawn shapes -- no source code</p>';
+}
+
+function showMixedInspect(gdsFeatures, drawnFeatures) {
+    var panel = document.getElementById('info-panel');
+    panel.innerHTML = '';
+
+    addKV(panel, 'selected', gdsFeatures.length + ' GDS + ' + drawnFeatures.length + ' drawn');
+
+    if (gdsFeatures.length > 0) {
+        addSep(panel);
+        addKV(panel, 'GDS', gdsFeatures.length + ' polygon(s)');
+    }
+    if (drawnFeatures.length > 0) {
+        addSep(panel);
+        addKV(panel, 'Drawn', drawnFeatures.length + ' shape(s)');
+        drawnFeatures.forEach(function(f, idx) {
+            var sg = getShapeGeom(f);
+            addKV(panel, '', sg.type + ' -- ' + (sg.bbox ? JSON.stringify(sg.bbox) : ''));
+        });
+    }
+
+    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Mixed selection -- see Info tab</p>';
+}
+
+// ============================================================
+// shapeToYAML
+// ============================================================
+function shapeToYAML(sg) {
+    var lines = [];
+    lines.push('shape: ' + sg.type);
+    if (sg.coordinates) lines.push('coordinates: ' + JSON.stringify(sg.coordinates));
+    if (sg.bbox) lines.push('bbox: ' + JSON.stringify(sg.bbox));
+    if (sg.width !== undefined) lines.push('width: ' + sg.width);
+    if (sg.height !== undefined) lines.push('height: ' + sg.height);
+    if (sg.center) lines.push('center: ' + JSON.stringify(sg.center));
+    if (sg.radius !== undefined) lines.push('radius: ' + sg.radius);
+    if (sg.length !== undefined) lines.push('length: ' + sg.length);
+    if (sg.area !== undefined) lines.push('area: ' + sg.area);
+    return lines;
+}
+
+// ============================================================
+// Console toggle
+// ============================================================
+function toggleConsole() {
+    var c = document.getElementById('console');
+    var icon = document.querySelector('#console-header span[title="Collapse"]');
+    c.classList.toggle('collapsed');
+    if (icon) {
+        icon.innerHTML = c.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+    }
+}
+
+// ============================================================
+// Copy YAML (adapted for VS Code webview postMessage)
+// ============================================================
+function copyYAML(e) {
+    e.stopPropagation();
+    var features = selectedFeatures.getArray();
+    if (features.length === 0) return;
+
+    var drawnFeatures = features.filter(function(f) { return f.get('isDrawn'); });
+    var gdsFeatures = features.filter(function(f) { return !f.get('isDrawn'); });
+
+    var lines = [];
+
+    if (gdsFeatures.length > 0) {
+        // GDS components: show as xxx.py Component N: Line X, bbox:[...]
+        var seenCallChain = {};
+        gdsFeatures.forEach(function(f, idx) {
+            var prov = f.get('provenance') || {};
+            var meta = f.get('meta') || {};
+            var bboxStr = '[' + (meta.bbox || []).map(function(v) { return v.toFixed(4); }).join(', ') + ']';
+            var base = (prov.file || '').split('/').pop();
+            var lineNum = prov.line || '?';
+            lines.push(base + ' Component ' + (idx + 1) + ': Line ' + lineNum + ', bbox:' + bboxStr);
+            // Include call chain so AI agent sees full compilation context
+            var chain = _normalizeCallChain(prov);
+            if (chain.length > 0) {
+                lines.push('  call_chain:');
+                chain.forEach(function(cc) {
+                    var loc = (cc.file || '') + ':' + (cc.line || '?');
+                    var fn = cc.function ? ' (' + cc.function + ')' : '';
+                    var key = loc + fn;
+                    if (!seenCallChain[key]) {
+                        seenCallChain[key] = true;
+                        lines.push('    - ' + loc + fn);
+                    }
+                });
+            }
+        });
+    }
+
+    if (drawnFeatures.length > 0) {
+        if (lines.length > 0) lines.push('');
+        if (drawnFeatures.length === 1 && gdsFeatures.length === 0) {
+            var sg = getShapeGeom(drawnFeatures[0]);
+            lines = lines.concat(shapeToYAML(sg));
+        } else {
+            lines.push('annotations:');
+            drawnFeatures.forEach(function(f) {
+                var sg = getShapeGeom(f);
+                lines.push('  - shape: ' + sg.type);
+                if (sg.bbox) lines.push('    bbox: ' + JSON.stringify(sg.bbox));
+                if (sg.width !== undefined) lines.push('    width: ' + sg.width);
+                if (sg.height !== undefined) lines.push('    height: ' + sg.height);
+                if (sg.center) lines.push('    center: ' + JSON.stringify(sg.center));
+                if (sg.radius !== undefined) lines.push('    radius: ' + sg.radius);
+                if (sg.length !== undefined) lines.push('    length: ' + sg.length);
+                if (sg.area !== undefined) lines.push('    area: ' + sg.area);
+            });
+        }
+    }
+
+    if (lines.length === 0) {
+        lines = ['# No data to copy'];
+    }
+
+    var text = lines.join('\n');
+    vscode.postMessage({ type: 'exportYaml', yaml: text });
+    var btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy YAML'; btn.classList.remove('copied'); }, 2000);
+}
+
+// ============================================================
+// Ask Claude integration
+// ============================================================
+function showAskSection() {
+    if (selectedFeatures.getArray().length === 0) return;
+    document.getElementById('ask-section').classList.add('visible');
+    document.getElementById('ask-input').focus();
+}
+
+function hideAskSection() {
+    document.getElementById('ask-section').classList.remove('visible');
+    document.getElementById('ask-input').value = '';
+}
+
+function sendAskClaude() {
+    var question = document.getElementById('ask-input').value.trim();
+    if (!question) return;
+    var gdsFeatures = selectedFeatures.getArray().filter(function(f) { return !f.get('isDrawn'); });
+    if (gdsFeatures.length === 0) return;
+    var components = gdsFeatures.map(function(f) {
+        return {
+            provId: f.ol_uid,
+            layer: f.get('layer') || '',
+            bbox: (f.get('meta') || {}).bbox || [],
+            provenance: f.get('provenance') || {}
+        };
+    });
+    vscode.postMessage({ type: 'askClaude', components: components, question: question });
+    hideAskSection();
+}
+
+// ============================================================
+// Handle messages from extension
+// ============================================================
+window.addEventListener('message', function(event) {
+    var message = event.data;
+    switch (message.type) {
+        case 'loadGds':
+            loadGdsData(message.geojson, message.gdsPath, message.mode);
+            break;
+        case 'setMode':
+            currentMode2 = message.mode;
+            var indicator = document.getElementById('mode-indicator');
+            indicator.textContent = message.mode === 'full' ? 'Provenance: ON' : 'Provenance: OFF';
+            indicator.className = message.mode === 'full' ? '' : 'partial';
+            break;
+    }
+});
+
+// ============================================================
+// Signal ready to extension
+// ============================================================
+vscode.postMessage({ type: 'webviewReady' });
+</script>
+</body>
+</html>
