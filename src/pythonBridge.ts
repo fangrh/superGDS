@@ -60,6 +60,10 @@ export function runPythonScript(
  * Parse GDS file to GeoJSON + provenance using venv Python.
  */
 export async function parseGdsFile(gdsPath: string): Promise<any> {
+    if (!_pythonDir) {
+        throw new Error('pythonBridge not initialized. Call initPythonBridge() first.');
+    }
+
     const scriptPath = path.join(_pythonDir, 'parse_gds.py');
 
     const result = await runPythonScript(scriptPath, [gdsPath]);
@@ -68,6 +72,9 @@ export async function parseGdsFile(gdsPath: string): Promise<any> {
             const parsed = JSON.parse(result.stdout);
             throw new Error(parsed.error || result.stderr || 'GDS parse failed');
         } catch (e: any) {
+            if (e instanceof SyntaxError) {
+                throw new Error(result.stderr || `GDS parse script failed with exit code ${result.exitCode}`);
+            }
             if (e.message && e.message !== 'GDS parse failed') throw e;
             throw new Error(result.stderr || 'GDS parse failed with unknown error');
         }
