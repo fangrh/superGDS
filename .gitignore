@@ -1,5 +1,9 @@
 out/
 node_modules/
+.venv/
 *.vsix
 .DS_Store
 __pycache__/
+gds/
+gds_test/
+gdsfactory/
