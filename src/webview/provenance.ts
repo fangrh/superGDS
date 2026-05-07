@@ -140,3 +140,18 @@ function parseCallStackFrame(frame: string): { file?: string; line?: number; fun
 function formatNumber(value: number): string {
     return Number.isFinite(value) ? value.toFixed(4) : String(value);
 }
+
+export function filterLocationsByFile(
+    locations: SourceLocation[],
+    primaryFile: string,
+    resolvePath: (f: string) => string
+): SourceLocation[] {
+    const normalized = resolvePath(primaryFile).replace(/\\/g, '/');
+    return locations.filter(
+        (loc) => resolvePath(loc.file).replace(/\\/g, '/') === normalized
+    );
+}
+
+export function formatMentions(locations: SourceLocation[]): string {
+    return locations.map((loc) => `@${loc.file}:${loc.line}`).join(' ');
+}

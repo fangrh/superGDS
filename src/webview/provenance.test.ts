@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatSelectionForOutput, getSourceChain, type ComponentSelection } from './provenance';
+import { filterLocationsByFile, formatMentions, formatSelectionForOutput, getSourceChain, type ComponentSelection, type SourceLocation } from './provenance';
 
 test('source chain starts with primary source and removes duplicate call-chain locations', () => {
     const component: ComponentSelection = {
@@ -68,4 +68,52 @@ test('selection output includes component basics and source chain', () => {
     assert.match(output, /BBox: \[0\.0000, 0\.0000, 10\.1250, 5\.5000\]/);
     assert.match(output, /Source chain:/);
     assert.match(output, /design\.py:12 \(build\)/);
+});
+
+test('filterLocationsByFile keeps only locations in the primary file', () => {
+    const resolvePath = (f: string) => f;
+    const locations: SourceLocation[] = [
+        { file: 'a.py', line: 10 },
+        { file: 'a.py', line: 20 },
+        { file: 'b.py', line: 30 },
+        { file: 'a.py', line: 40 },
+    ];
+
+    assert.deepEqual(
+        filterLocationsByFile(locations, 'a.py', resolvePath),
+        [
+            { file: 'a.py', line: 10 },
+            { file: 'a.py', line: 20 },
+            { file: 'a.py', line: 40 },
+        ]
+    );
+});
+
+test('filterLocationsByFile returns empty when no matches', () => {
+    const resolvePath = (f: string) => f;
+    const locations: SourceLocation[] = [
+        { file: 'b.py', line: 30 },
+    ];
+
+    assert.deepEqual(
+        filterLocationsByFile(locations, 'a.py', resolvePath),
+        []
+    );
+});
+
+test('formatMentions joins file:line with @ prefix', () => {
+    const locations: SourceLocation[] = [
+        { file: 'dir/a.py', line: 359 },
+        { file: 'dir/a.py', line: 504 },
+        { file: 'dir/a.py', line: 522 },
+    ];
+
+    assert.equal(
+        formatMentions(locations),
+        '@dir/a.py:359 @dir/a.py:504 @dir/a.py:522'
+    );
+});
+
+test('formatMentions returns empty string for empty array', () => {
+    assert.equal(formatMentions([]), '');
 });
