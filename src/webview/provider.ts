@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { askClaude } from '../claudeBridge';
 import {
-    formatSelectionForOutput,
     getSourceChain,
     type ComponentSelection,
     type SourceLocation,
@@ -15,9 +14,6 @@ export function registerMessageHandlers(
             switch (message.type) {
                 case 'selectComponents':
                     _currentSelection = message.components as ComponentSelection[];
-                    if (_currentSelection.length > 0) {
-                        showSelectionOutput(_currentSelection);
-                    }
                     highlightOpenSourceLocations(_currentSelection);
                     break;
 
@@ -62,21 +58,12 @@ export function registerMessageHandlers(
 }
 
 let _currentSelection: ComponentSelection[] = [];
-const _outputChannel = vscode.window.createOutputChannel('superGDS');
 const _sourceHighlight = vscode.window.createTextEditorDecorationType({
     backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
     border: '1px solid',
     borderColor: new vscode.ThemeColor('editor.findMatchBorder'),
     isWholeLine: true,
 });
-
-function showSelectionOutput(components: ComponentSelection[]): void {
-    _outputChannel.appendLine('');
-    _outputChannel.appendLine('='.repeat(72));
-    _outputChannel.appendLine(new Date().toISOString());
-    _outputChannel.appendLine(formatSelectionForOutput(components));
-    _outputChannel.show(true);
-}
 
 function highlightOpenSourceLocations(components: ComponentSelection[]): void {
     const locations = components.flatMap(getSourceChain);
