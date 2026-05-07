@@ -88,8 +88,9 @@ export async function scanForGds(pythonFile?: string): Promise<string | null> {
 }
 
 /**
- * Find a .gds file for the given Python file, only if modified after afterTime.
- * Used to discover GDS output after running a build.
+ * Find .gds files created/modified after a timestamp by scanning the
+ * ENTIRE workspace. Returns the best match (exact filename > partial > any).
+ * Used to discover GDS output regardless of where the script writes it.
  */
 export function findGdsOutput(
     pythonFile: string,
@@ -98,36 +99,63 @@ export function findGdsOutput(
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspaceRoot) return null;
 
-    const gdsDir = vscode.workspace.getConfiguration('supergds').get<string>('gdsOutputDir') || 'gds';
     const baseName = path.basename(pythonFile, '.py');
-    const gdsDirPath = path.join(workspaceRoot, gdsDir);
+    let bestMatch: string | null = null;
+    let bestScore = -1;
+    let bestMtime = 0;
 
-    // Exact match first
-    const exactPath = path.join(gdsDirPath, `${baseName}.gds`);
-    if (fs.existsSync(exactPath)) {
-        const stat = fs.statSync(exactPath);
-        if (stat.mtime > afterTime) {
-            _currentGdsPath = exactPath;
-            return exactPath;
+    const SKIP_DIRS = new Set([
+        'node_modules', '.git', '.venv', 'venv', '__pycache__',
+        '.claude', '.pytest_cache', '.mypy_cache', '.ruff_cache',
+    ]);
+
+    function walk(dir: string) {
+        let entries: fs.Dirent[];
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+            return;
         }
-    }
-
-    // Scan all .gds files in the output directory
-    if (fs.existsSync(gdsDirPath)) {
-        const files = fs.readdirSync(gdsDirPath, { recursive: true }) as string[];
-        for (const f of files) {
-            if (typeof f === 'string' && f.endsWith('.gds') && f.includes(baseName)) {
-                const fullPath = path.join(gdsDirPath, f);
-                const stat = fs.statSync(fullPath);
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                if (SKIP_DIRS.has(entry.name)) continue;
+                if (entry.name.startsWith('.')) continue;
+                walk(path.join(dir, entry.name));
+            } else if (entry.name.endsWith('.gds')) {
+                const fullPath = path.join(dir, entry.name);
+                let stat: fs.Stats;
+                try {
+                    stat = fs.statSync(fullPath);
+                } catch {
+                    continue;
+                }
                 if (stat.mtime > afterTime) {
-                    _currentGdsPath = fullPath;
-                    return fullPath;
+                    // Score: exact basename = 2, partial = 1, any = 0
+                    let score = 0;
+                    if (entry.name === `${baseName}.gds`) {
+                        score = 2;
+                    } else if (entry.name.includes(baseName)) {
+                        score = 1;
+                    }
+                    if (
+                        score > bestScore ||
+                        (score === bestScore && stat.mtimeMs > bestMtime)
+                    ) {
+                        bestScore = score;
+                        bestMtime = stat.mtimeMs;
+                        bestMatch = fullPath;
+                    }
                 }
             }
         }
     }
 
-    return null;
+    walk(workspaceRoot);
+
+    if (bestMatch) {
+        _currentGdsPath = bestMatch;
+    }
+    return bestMatch;
 }
 
 export function clearGdsState(): void {
