@@ -113,38 +113,9 @@ function detectCliTerminal(): vscode.Terminal | undefined {
 async function injectViaSidebar(
     locations: SourceLocation[]
 ): Promise<void> {
-    if (locations.length === 0) return;
-
-    const resolvedPath = resolveWorkspacePath(locations[0].file);
-    const fullPath = vscode.Uri.file(resolvedPath);
-
-    let doc: vscode.TextDocument;
-    try {
-        doc = await vscode.workspace.openTextDocument(fullPath);
-    } catch {
-        return;
-    }
-
-    const previousEditor = vscode.window.activeTextEditor;
-    const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.Active);
-
-    for (const loc of locations) {
-        const range = lineToRange(doc, loc.line);
-        if (!range) continue;
-        editor.selection = new vscode.Selection(range.start, range.end);
-        try {
-            await vscode.commands.executeCommand('claude-vscode.insertAtMention');
-        } catch {
-            break;
-        }
-    }
-
-    if (previousEditor && previousEditor.document !== doc) {
-        await vscode.window.showTextDocument(
-            previousEditor.document,
-            previousEditor.viewColumn
-        );
-    }
+    const text = formatMentions(locations);
+    if (!text) return;
+    await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', null, text);
 }
 
 async function injectViaTerminal(
@@ -160,7 +131,12 @@ async function injectViaTerminal(
 async function syncClaudeContext(
     components: ComponentSelection[]
 ): Promise<void> {
-    if (components.length === 0) return;
+    if (components.length === 0) {
+        if (detectSidebarVisible()) {
+            await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', null, '');
+        }
+        return;
+    }
 
     const allLocations = components.flatMap(getSourceChain);
     if (allLocations.length === 0) return;
