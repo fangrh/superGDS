@@ -152,6 +152,27 @@ export function filterLocationsByFile(
     );
 }
 
-export function formatMentions(locations: SourceLocation[]): string {
-    return locations.map((loc) => `@${loc.file}:${loc.line}`).join(' ');
+export function getSelectionSourceLocations(components: ComponentSelection[]): SourceLocation[] {
+    const byFile = new Map<string, SourceLocation[]>();
+
+    for (const component of components) {
+        for (const location of getSourceChain(component)) {
+            const existing = byFile.get(location.file) || [];
+            if (!existing.some((item) => item.line === location.line)) {
+                existing.push(location);
+            }
+            byFile.set(location.file, existing);
+        }
+    }
+
+    return Array.from(byFile.values()).flatMap((locations) =>
+        locations.sort((a, b) => a.line - b.line)
+    );
+}
+
+export function formatMentions(
+    locations: SourceLocation[],
+    formatFile: (file: string) => string = (file) => file
+): string {
+    return locations.map((loc) => `@${formatFile(loc.file)}:${loc.line}`).join(' ');
 }

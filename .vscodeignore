@@ -1,6 +1,7 @@
 .git/**
 .gitignore
 .omx/**
+gdsfactory/.env
 .venv/**
 .vscode/**
 docs/**

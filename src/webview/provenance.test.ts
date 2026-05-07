@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterLocationsByFile, formatMentions, formatSelectionForOutput, getSourceChain, type ComponentSelection, type SourceLocation } from './provenance';
+import { filterLocationsByFile, formatMentions, formatSelectionForOutput, getSelectionSourceLocations, getSourceChain, type ComponentSelection, type SourceLocation } from './provenance';
 
 test('source chain starts with primary source and removes duplicate call-chain locations', () => {
     const component: ComponentSelection = {
@@ -101,6 +101,44 @@ test('filterLocationsByFile returns empty when no matches', () => {
     );
 });
 
+test('getSelectionSourceLocations matches source panel file groups', () => {
+    const components: ComponentSelection[] = [
+        {
+            provId: 'c1',
+            layer: '1/0',
+            bbox: [],
+            provenance: {
+                file: 'cells/ring.py',
+                line: 42,
+                call_chain: [
+                    { file: 'top.py', line: 20 },
+                    { file: 'cells/ring.py', line: 42 },
+                ],
+            },
+        },
+        {
+            provId: 'c2',
+            layer: '1/0',
+            bbox: [],
+            provenance: {
+                file: 'cells/ring.py',
+                line: 12,
+                call_chain: [
+                    { file: 'top.py', line: 10 },
+                    { file: 'top.py', line: 20 },
+                ],
+            },
+        },
+    ];
+
+    assert.deepEqual(getSelectionSourceLocations(components), [
+        { file: 'cells/ring.py', line: 12, functionName: undefined },
+        { file: 'cells/ring.py', line: 42, functionName: undefined },
+        { file: 'top.py', line: 10, functionName: undefined },
+        { file: 'top.py', line: 20, functionName: undefined },
+    ]);
+});
+
 test('formatMentions joins file:line with @ prefix', () => {
     const locations: SourceLocation[] = [
         { file: 'dir/a.py', line: 359 },
@@ -111,6 +149,17 @@ test('formatMentions joins file:line with @ prefix', () => {
     assert.equal(
         formatMentions(locations),
         '@dir/a.py:359 @dir/a.py:504 @dir/a.py:522'
+    );
+});
+
+test('formatMentions supports custom file display paths', () => {
+    const locations: SourceLocation[] = [
+        { file: 'D:/repo/dir/a.py', line: 359 },
+    ];
+
+    assert.equal(
+        formatMentions(locations, (file) => file.replace('D:/repo/', '')),
+        '@dir/a.py:359'
     );
 });
 

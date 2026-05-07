@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { askClaude } from '../claudeBridge';
 import {
     getSourceChain,
-    filterLocationsByFile,
+    getSelectionSourceLocations,
     formatMentions,
     type ComponentSelection,
     type SourceLocation,
@@ -90,17 +90,6 @@ function highlightOpenSourceLocations(components: ComponentSelection[]): void {
     }
 }
 
-function detectSidebarVisible(): boolean {
-    for (const tabGroup of vscode.window.tabGroups.all) {
-        for (const tab of tabGroup.tabs) {
-            if (tab.label.includes('Claude Code')) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 function detectCliTerminal(): vscode.Terminal | undefined {
     for (const terminal of vscode.window.terminals) {
         if (terminal.name.toLowerCase().includes('claude')) {
@@ -112,52 +101,61 @@ function detectCliTerminal(): vscode.Terminal | undefined {
 
 async function injectViaSidebar(
     locations: SourceLocation[]
-): Promise<void> {
-    const text = formatMentions(locations);
-    if (!text) return;
-    await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', null, text);
+): Promise<boolean> {
+    const text = formatClaudeChatMentions(locations);
+    if (!text) return false;
+
+    await vscode.env.clipboard.writeText(text);
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return false;
+
+    const editorPath = normalizePath(editor.document.uri.fsPath);
+    const targetPath = normalizePath(resolveWorkspacePath(locations[0].file));
+    if (editorPath !== targetPath) return false;
+
+    const sameFileLocations = locations.filter(
+        (loc) => normalizePath(resolveWorkspacePath(loc.file)) === editorPath
+    );
+    const range = locationsToSelectionRange(editor.document, sameFileLocations);
+    if (!range) return false;
+
+    editor.selection = new vscode.Selection(range.start, range.end);
+    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+    return true;
 }
 
 async function injectViaTerminal(
     terminal: vscode.Terminal,
     locations: SourceLocation[]
 ): Promise<void> {
-    const text = formatMentions(locations);
+    const text = formatMentions(locations, toWorkspaceRelativePath);
     if (!text) return;
     terminal.show();
-    terminal.sendText(text);
+    await delay(50);
+    await vscode.commands.executeCommand('workbench.action.terminal.sendSequence', {
+        text: '\u0001\u000b',
+    });
+    terminal.sendText(text, false);
 }
 
 async function syncClaudeContext(
     components: ComponentSelection[]
 ): Promise<void> {
     if (components.length === 0) {
-        if (detectSidebarVisible()) {
-            await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', null, '');
-        }
         return;
     }
 
-    const allLocations = components.flatMap(getSourceChain);
+    const allLocations = getSelectionSourceLocations(components);
     if (allLocations.length === 0) return;
-
-    const primaryFile = allLocations[0].file;
-    const fileLocations = filterLocationsByFile(
-        allLocations,
-        primaryFile,
-        resolveWorkspacePath
-    );
-
-    if (detectSidebarVisible()) {
-        await injectViaSidebar(fileLocations);
-        return;
-    }
 
     const terminal = detectCliTerminal();
     if (terminal) {
-        await injectViaTerminal(terminal, fileLocations);
+        await injectViaTerminal(terminal, allLocations);
         return;
     }
+
+    await injectViaSidebar(allLocations);
 }
 
 async function openSourceFile(filePath: string, line?: number): Promise<void> {
@@ -190,6 +188,52 @@ function resolveWorkspacePath(filePath: string): string {
 
 function normalizePath(filePath: string): string {
     return filePath.replace(/\\/g, '/');
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toWorkspaceRelativePath(filePath: string): string {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+        return normalizePath(filePath);
+    }
+
+    const resolved = resolveWorkspacePath(filePath);
+    const relative = path.relative(workspaceRoot, resolved);
+    if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+        return normalizePath(relative);
+    }
+
+    return normalizePath(filePath);
+}
+
+function formatClaudeChatMentions(locations: SourceLocation[]): string {
+    return locations
+        .map((loc) => `@${toWorkspaceRelativePath(loc.file)}#L${loc.line}`)
+        .join(' ');
+}
+
+function locationsToSelectionRange(
+    document: vscode.TextDocument,
+    locations: SourceLocation[]
+): vscode.Range | undefined {
+    const ranges = locations
+        .map((location) => lineToRange(document, location.line))
+        .filter((range): range is vscode.Range => range !== undefined);
+    if (ranges.length === 0) return undefined;
+
+    const start = ranges.reduce((earliest, range) =>
+        range.start.isBefore(earliest) ? range.start : earliest,
+        ranges[0].start
+    );
+    const end = ranges.reduce((latest, range) =>
+        range.end.isAfter(latest) ? range.end : latest,
+        ranges[0].end
+    );
+
+    return new vscode.Range(start, end);
 }
 
 function lineToRange(document: vscode.TextDocument, line: number): vscode.Range | undefined {
