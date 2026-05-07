@@ -61,10 +61,17 @@ def _build_provenance_from_sidecar(entry, cell_name):
     Returns a dict with keys: file, line, function, call_chain, cell,
     and optionally source_text.
     """
-    call_chain = [{"file": entry["file"], "line": entry["line"], "function": entry["function"]}]
+    primary_file = entry["file"]
+    primary_dir = os.path.dirname(primary_file) if primary_file else ""
+
+    call_chain = [{"file": primary_file, "line": entry["line"], "function": entry["function"]}]
     for frame_str in entry.get("call_stack", []):
         parsed = _parse_call_stack_string(frame_str)
         if parsed is not None:
+            # call_stack uses bare filenames (pathlib.Path.name),
+            # resolve them against the primary entry's directory
+            if primary_dir and not os.path.isabs(parsed["file"]):
+                parsed = {**parsed, "file": os.path.join(primary_dir, parsed["file"])}
             call_chain.append(parsed)
 
     prov = {
