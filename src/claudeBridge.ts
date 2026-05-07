@@ -6,7 +6,7 @@ interface ComponentProvenance {
     line?: number | string;
     class_name?: string;
     call_index?: number;
-    call_chain?: Array<{ file: string; function: string; line: number }>;
+    call_chain?: Array<{ file?: string; function?: string; line?: number | string }>;
     cell?: string;
     instance_name?: string;
     layer?: string;

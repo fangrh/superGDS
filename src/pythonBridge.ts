@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import * as path from 'path';
+import { getPythonRunEnv } from './pythonEnv';
 
 export interface PythonResult {
     stdout: string;
@@ -97,7 +98,7 @@ export function runPythonFile(
         execFile(
             pythonPath,
             [filePath],
-            { cwd: workingDir, maxBuffer: 50 * 1024 * 1024 },
+            { cwd: workingDir, env: getPythonRunEnv(), maxBuffer: 50 * 1024 * 1024 },
             (error, stdout, stderr) => {
                 resolve({
                     stdout: stdout.trim(),

@@ -18,22 +18,12 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
 #console.collapsed { height: 32px; overflow-y: hidden; }
 #console-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: #181825; border-bottom: 1px solid #313244; cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1; }
 #console-header span { font-size: 12px; font-weight: 600; color: #89b4fa; }
-#console-header button { padding: 3px 10px; background: #45475a; color: #cdd6f4; border: 1px solid #585b70; border-radius: 3px; cursor: pointer; font-size: 11px; font-family: inherit; margin-left: 4px; }
-#console-header button:hover { background: #585b70; }
-#console-header button.copied { background: #1a6640; border-color: #2e8b57; }
-#console-header button.ask-claude { background: #5c3f82; border-color: #7b5ea7; }
-#console-header button.ask-claude:hover { background: #7b5ea7; }
 #console-body { padding: 8px 12px; }
 #console-body .kv { display: flex; gap: 8px; padding: 1px 0; }
 #console-body .kv .key { color: #6c7086; min-width: 90px; flex-shrink: 0; text-align: right; }
 #console-body .kv .val { color: #cdd6f4; word-break: break-all; }
 #console-body .kv .val.hl { color: #f9e2af; }
 #console-body .placeholder { color: #585b70; font-style: italic; padding: 20px 0; text-align: center; }
-#ask-section { display: none; padding: 8px 12px; background: #181825; border-top: 1px solid #313244; }
-#ask-section.visible { display: flex; gap: 6px; align-items: center; }
-#ask-section input { flex: 1; padding: 4px 8px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #45475a; border-radius: 3px; font: 12px monospace; }
-#ask-section input::placeholder { color: #585b70; }
-#ask-section button { padding: 4px 12px; background: #5c3f82; color: #cdd6f4; border: 1px solid #7b5ea7; border-radius: 3px; cursor: pointer; font: 12px monospace; }
 .file-item { padding: 6px 8px; cursor: pointer; border-radius: 4px; margin-bottom: 2px; font-size: 13px; word-break: break-all; }
 .file-item:hover { background: #313244; }
 .file-item.active { background: #45475a; }
@@ -44,16 +34,15 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
 .tab-btn.active { color: #89b4fa; border-bottom-color: #89b4fa; }
 .tab-btn:hover { color: #cdd6f4; }
 #source-panel { height: 100%; overflow-y: auto; }
-.src-line { display: flex; font: 12px/1.6 'Cascadia Code', 'Fira Code', 'Consolas', monospace; padding: 0 8px; margin: 0; }
-.src-line.hl { background: rgba(250, 200, 80, 0.15); border-left: 3px solid #f9e2af; }
-.src-line .ln { color: #585b70; min-width: 44px; text-align: right; padding-right: 12px; user-select: none; flex-shrink: 0; }
-.src-line .code { color: #cdd6f4; white-space: pre; overflow-x: auto; }
+.source-link { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px; border: 0; border-left: 3px solid transparent; background: transparent; color: #cdd6f4; cursor: pointer; font: 12px/1.5 'Cascadia Code', 'Fira Code', 'Consolas', monospace; text-align: left; }
+.source-link:hover { background: #313244; border-left-color: #89b4fa; }
+.source-link.primary { background: rgba(137, 180, 250, 0.08); border-left-color: #89b4fa; }
+.source-link .loc { color: #89b4fa; white-space: nowrap; }
+.source-link .fn { color: #a6adc8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ol-dragbox { border: 2px dashed #89b4fa !important; background-color: rgba(137,180,250,0.1) !important; }
 .file-section { margin: 4px 0; border: 1px solid #313244; border-radius: 4px; }
 .file-section-header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #181825; cursor: pointer; user-select: none; font-size: 12px; }
 .file-section-header:hover { background: #1e1e2e; }
-.file-section-header .arrow { color: #585b70; font-size: 10px; transition: transform 0.15s; }
-.file-section-header .arrow.open { transform: rotate(90deg); }
 .file-section-header .fname { color: #89b4fa; }
 .file-section-header .lines { color: #6c7086; margin-left: auto; }
 .file-section-body { max-height: 0; overflow: hidden; transition: max-height 0.2s; }
@@ -104,25 +93,19 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
             </button>
         </div>
     </div>
-    <div id="ask-section">
-        <input type="text" id="ask-input" placeholder="Ask Claude about selected components..." onkeydown="if(event.key==='Enter')sendAskClaude()">
-        <button onclick="sendAskClaude()">Ask Claude</button>
-    </div>
     <div id="console">
         <div id="console-header">
             <span style="display:flex;align-items:center;gap:2px;">
-                <span class="tab-btn active" data-tab="info" onclick="switchTab(event, 'info')">Info</span>
-                <span class="tab-btn" data-tab="source" onclick="switchTab(event, 'source')">Source</span>
+                <span class="tab-btn active" data-tab="source" onclick="switchTab(event, 'source')">Source</span>
+                <span class="tab-btn" data-tab="info" onclick="switchTab(event, 'info')">Info</span>
             </span>
             <span style="display:flex;align-items:center;gap:6px;">
-                <button id="ask-claude-btn" class="ask-claude" onclick="showAskSection()" title="Ask Claude about selection">Ask Claude</button>
-                <button id="copy-btn" onclick="copyYAML(event)">Copy YAML</button>
                 <span onclick="toggleConsole()" title="Collapse" style="cursor:pointer;color:#6c7086;font-size:14px;">&#9660;</span>
             </span>
         </div>
         <div id="console-body">
-            <div id="info-panel"><p class="placeholder">Click a polygon to inspect</p></div>
-            <div id="source-panel" style="display:none;"><p class="placeholder">Click a polygon, then switch to Source tab to view code</p></div>
+            <div id="source-panel"><p class="placeholder">Click a polygon to inspect source</p></div>
+            <div id="info-panel" style="display:none;"><p class="placeholder">Click a polygon to inspect</p></div>
         </div>
     </div>
 </div>
@@ -143,9 +126,7 @@ var currentGdsPath = '';
 var currentMode2 = 'partial';
 var selectedFeatures = new ol.Collection();
 var ctrlPressed = false;
-var activeTab = 'info';
-var sourceCache = {};   // filePath -> source code string
-var expandedFiles = {}; // filePath -> true/false
+var activeTab = 'source';
 var allFeatures = [];
 var layerColors = {};
 
@@ -286,12 +267,14 @@ function onSelectionChanged() {
     translateInteraction.setActive(hasDrawn);
 
     if (count === 0) {
+        postSelectedComponents([]);
         clearInspect();
         return;
     }
 
     var drawnFeatures = features.filter(function(f) { return f.get('isDrawn'); });
     var gdsFeatures = features.filter(function(f) { return !f.get('isDrawn'); });
+    postSelectedComponents(gdsFeatures);
 
     if (drawnFeatures.length > 0 && gdsFeatures.length === 0) {
         if (drawnFeatures.length === 1) {
@@ -308,6 +291,24 @@ function onSelectionChanged() {
     } else {
         showMixedInspect(gdsFeatures, drawnFeatures);
     }
+}
+
+function postSelectedComponents(features) {
+    vscode.postMessage({
+        type: 'selectComponents',
+        components: componentsFromFeatures(features)
+    });
+}
+
+function componentsFromFeatures(features) {
+    return features.map(function(f) {
+        return {
+            provId: f.ol_uid,
+            layer: f.get('layer') || '',
+            bbox: (f.get('meta') || {}).bbox || [],
+            provenance: f.get('provenance') || {}
+        };
+    });
 }
 
 // ============================================================
@@ -428,33 +429,22 @@ function updateMultiSourcePanel(fileMap) {
         return;
     }
 
-    fileKeys.forEach(function(fp) {
+    fileKeys.forEach(function(fp, fileIndex) {
         var section = document.createElement('div');
         section.className = 'file-section';
         section.setAttribute('data-file', fp);
 
         var base = fp.split('/').pop();
         var lines = fileMap[fp].sort(function(a,b){return a-b;});
-        var isOpen = expandedFiles[fp] || false;
 
         var header = document.createElement('div');
         header.className = 'file-section-header';
-        header.innerHTML = '<span class="arrow' + (isOpen ? ' open' : '') + '">&#9654;</span>'
-            + '<span class="fname">' + esc(base) + '</span>'
+        header.innerHTML = '<span class="fname">' + esc(base) + '</span>'
             + '<span class="lines">lines [' + lines.join(', ') + ']</span>';
 
         var body = document.createElement('div');
-        body.className = 'file-section-body' + (isOpen ? ' open' : '');
-
-        header.onclick = (function(filePath, bodyEl) {
-            return function() { toggleFileSection(filePath, bodyEl); };
-        })(fp, body);
-
-        if (isOpen) {
-            loadFileSource(fp, body, lines);
-        } else {
-            body.innerHTML = '';
-        }
+        body.className = 'file-section-body open';
+        renderSourceLinks(fp, lines, body, fileIndex === 0);
 
         section.appendChild(header);
         section.appendChild(body);
@@ -462,61 +452,20 @@ function updateMultiSourcePanel(fileMap) {
     });
 }
 
-function toggleFileSection(filePath, bodyEl) {
-    var isOpen = expandedFiles[filePath] || false;
-    expandedFiles[filePath] = !isOpen;
-
-    var section = bodyEl.parentElement;
-    var arrow = section.querySelector('.arrow');
-    if (!isOpen) {
-        bodyEl.classList.add('open');
-        arrow.classList.add('open');
-        var linesText = section.querySelector('.lines').textContent;
-        var match = linesText.match(/\[(.+)\]/);
-        var lines = match ? match[1].split(', ').map(Number) : [];
-        loadFileSource(filePath, bodyEl, lines);
-    } else {
-        bodyEl.classList.remove('open');
-        arrow.classList.remove('open');
-    }
-}
-
-function loadFileSource(filePath, container, highlightLines) {
-    if (sourceCache[filePath]) {
-        renderSourceLines(sourceCache[filePath], container, highlightLines);
-        return;
-    }
-
-    container.innerHTML = '<p class="placeholder" style="padding:8px;">Loading...</p>';
-
-    var url = '/source?repo=' + encodeURIComponent(repo) + '&ref=' + branch
-        + '&path=' + encodeURIComponent(filePath);
-
-    fetch(url).then(function(r) {
-        if (!r.ok) throw Error('HTTP ' + r.status);
-        return r.text();
-    }).then(function(code) {
-        sourceCache[filePath] = code;
-        renderSourceLines(code, container, highlightLines);
-    }).catch(function(e) {
-        container.innerHTML = '<p class="placeholder">Failed to load source: ' + esc(e.message) + '</p>';
+function renderSourceLinks(filePath, lines, container, primaryFile) {
+    container.innerHTML = '';
+    lines.forEach(function(line, idx) {
+        var btn = document.createElement('button');
+        btn.className = 'source-link' + (primaryFile && idx === 0 ? ' primary' : '');
+        btn.type = 'button';
+        btn.innerHTML = '<span class="loc">' + esc(filePath + ':' + line) + '</span>'
+            + '<span class="fn">Open source</span>';
+        btn.onclick = function(e) {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'requestSource', file: filePath, line: line });
+        };
+        container.appendChild(btn);
     });
-}
-
-function renderSourceLines(code, container, highlightLines) {
-    var lines = code.split('\n');
-    var html = '';
-    for (var i = 0; i < lines.length; i++) {
-        var ln = i + 1;
-        var cls = highlightLines.indexOf(ln) !== -1 ? 'src-line hl' : 'src-line';
-        html += '<div class="' + cls + '"><span class="ln">' + ln + '</span><span class="code">' + esc(lines[i]) + '</span></div>';
-    }
-    container.innerHTML = html;
-
-    var firstHl = container.querySelector('.src-line.hl');
-    if (firstHl) {
-        firstHl.scrollIntoView({ block: 'center' });
-    }
 }
 
 // ============================================================
@@ -799,8 +748,6 @@ function loadGdsData(geojson, gdsPath, mode) {
     source.clear();
     allFeatures = [];
     layerColors = {};
-    sourceCache = {};
-    expandedFiles = {};
 
     var indicator = document.getElementById('mode-indicator');
     if (mode === 'full') {
@@ -839,8 +786,6 @@ function loadGdsData(geojson, gdsPath, mode) {
     clearInspect();
     buildLegend();
 
-    var askBtn = document.getElementById('ask-claude-btn');
-    askBtn.style.display = (mode === 'full') ? '' : 'none';
 }
 
 // ============================================================
@@ -973,7 +918,7 @@ function showInspect(feature) {
 
 function clearInspect() {
     document.getElementById('info-panel').innerHTML = '<p class="placeholder">Click a polygon to inspect</p>';
-    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Click a polygon, then switch to Source tab to view code<br><small style="color:#585b70;">Requires provenance data embedded in the GDS file.</small></p>';
+    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Click a polygon to inspect source<br><small style="color:#585b70;">Requires provenance data embedded in the GDS file.</small></p>';
 }
 
 function switchTab(e, tab) {
@@ -1235,14 +1180,7 @@ function sendAskClaude() {
     if (!question) return;
     var gdsFeatures = selectedFeatures.getArray().filter(function(f) { return !f.get('isDrawn'); });
     if (gdsFeatures.length === 0) return;
-    var components = gdsFeatures.map(function(f) {
-        return {
-            provId: f.ol_uid,
-            layer: f.get('layer') || '',
-            bbox: (f.get('meta') || {}).bbox || [],
-            provenance: f.get('provenance') || {}
-        };
-    });
+    var components = componentsFromFeatures(gdsFeatures);
     vscode.postMessage({ type: 'askClaude', components: components, question: question });
     hideAskSection();
 }
