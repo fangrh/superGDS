@@ -1,7 +1,10 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { askClaude } from '../claudeBridge';
 import {
     getSourceChain,
+    filterLocationsByFile,
+    formatMentions,
     type ComponentSelection,
     type SourceLocation,
 } from './provenance';
@@ -15,6 +18,7 @@ export function registerMessageHandlers(
                 case 'selectComponents':
                     _currentSelection = message.components as ComponentSelection[];
                     highlightOpenSourceLocations(_currentSelection);
+                    await syncClaudeContext(_currentSelection);
                     break;
 
                 case 'askClaude': {
@@ -86,15 +90,107 @@ function highlightOpenSourceLocations(components: ComponentSelection[]): void {
     }
 }
 
-async function openSourceFile(filePath: string, line?: number): Promise<void> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
-    if (!workspaceRoot) return;
+function detectSidebarVisible(): boolean {
+    for (const tabGroup of vscode.window.tabGroups.all) {
+        for (const tab of tabGroup.tabs) {
+            if (tab.label.includes('Claude Code')) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
-    const fullPath = vscode.Uri.file(resolveWorkspacePath(filePath));
+function detectCliTerminal(): vscode.Terminal | undefined {
+    for (const terminal of vscode.window.terminals) {
+        if (terminal.name.toLowerCase().includes('claude')) {
+            return terminal;
+        }
+    }
+    return undefined;
+}
+
+async function injectViaSidebar(
+    locations: SourceLocation[]
+): Promise<void> {
+    if (locations.length === 0) return;
+
+    const resolvedPath = resolveWorkspacePath(locations[0].file);
+    const fullPath = vscode.Uri.file(resolvedPath);
+
+    let doc: vscode.TextDocument;
+    try {
+        doc = await vscode.workspace.openTextDocument(fullPath);
+    } catch {
+        return;
+    }
+
+    const previousEditor = vscode.window.activeTextEditor;
+    const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.Active);
+
+    for (const loc of locations) {
+        const range = lineToRange(doc, loc.line);
+        if (!range) continue;
+        editor.selection = new vscode.Selection(range.start, range.end);
+        try {
+            await vscode.commands.executeCommand('claude-vscode.insertAtMention');
+        } catch {
+            break;
+        }
+    }
+
+    if (previousEditor && previousEditor.document !== doc) {
+        await vscode.window.showTextDocument(
+            previousEditor.document,
+            previousEditor.viewColumn
+        );
+    }
+}
+
+async function injectViaTerminal(
+    terminal: vscode.Terminal,
+    locations: SourceLocation[]
+): Promise<void> {
+    const text = formatMentions(locations);
+    if (!text) return;
+    terminal.show();
+    terminal.sendText(text);
+}
+
+async function syncClaudeContext(
+    components: ComponentSelection[]
+): Promise<void> {
+    if (components.length === 0) return;
+
+    const allLocations = components.flatMap(getSourceChain);
+    if (allLocations.length === 0) return;
+
+    const primaryFile = allLocations[0].file;
+    const fileLocations = filterLocationsByFile(
+        allLocations,
+        primaryFile,
+        resolveWorkspacePath
+    );
+
+    if (detectSidebarVisible()) {
+        await injectViaSidebar(fileLocations);
+        return;
+    }
+
+    const terminal = detectCliTerminal();
+    if (terminal) {
+        await injectViaTerminal(terminal, fileLocations);
+        return;
+    }
+}
+
+async function openSourceFile(filePath: string, line?: number): Promise<void> {
+    const resolved = resolveWorkspacePath(filePath);
+    const fullPath = vscode.Uri.file(resolved);
     try {
         const doc = await vscode.workspace.openTextDocument(fullPath);
         const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
-        if (line && line > 0) {
+        if (line != null && line > 0) {
             const range = lineToRange(doc, line);
             if (range) {
                 editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
@@ -108,7 +204,7 @@ async function openSourceFile(filePath: string, line?: number): Promise<void> {
 }
 
 function resolveWorkspacePath(filePath: string): string {
-    if (vscode.Uri.file(filePath).fsPath === filePath && filePath.startsWith('/')) {
+    if (path.isAbsolute(filePath)) {
         return filePath;
     }
 
