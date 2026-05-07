@@ -83,6 +83,33 @@ export async function parseGdsFile(gdsPath: string): Promise<any> {
 }
 
 /**
+ * Run a Python file as a script using the venv Python interpreter.
+ * Returns stdout, stderr, and exit code.
+ */
+export function runPythonFile(
+    filePath: string,
+    cwd?: string
+): Promise<PythonResult> {
+    const pythonPath = getPythonPath();
+    const workingDir = cwd || path.dirname(filePath);
+
+    return new Promise((resolve) => {
+        execFile(
+            pythonPath,
+            [filePath],
+            { cwd: workingDir, maxBuffer: 50 * 1024 * 1024 },
+            (error, stdout, stderr) => {
+                resolve({
+                    stdout: stdout.trim(),
+                    stderr: stderr.trim(),
+                    exitCode: error ? (error as any).code || 1 : 0,
+                });
+            }
+        );
+    });
+}
+
+/**
  * Detect gdsfactory version (fork / upstream / none).
  * Returns "fork" | "upstream" | "none".
  */
