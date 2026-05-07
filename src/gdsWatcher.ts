@@ -63,18 +63,13 @@ export async function scanForGds(pythonFile?: string): Promise<string | null> {
     const baseName = path.basename(file, '.py');
     const gdsDirPath = path.join(workspaceRoot, gdsDir);
 
-    const patterns = [
-        path.join(gdsDirPath, `${baseName}.gds`),
-        path.join(gdsDirPath, `${baseName}_*.gds`),
-    ];
-
-    for (const pattern of patterns) {
-        if (fs.existsSync(pattern)) {
-            _currentGdsPath = pattern;
-            _onGdsReady.fire(pattern);
-            await vscode.commands.executeCommand('setContext', 'supergds.gdsAvailable', true);
-            return pattern;
-        }
+    // Exact match first
+    const exactPath = path.join(gdsDirPath, `${baseName}.gds`);
+    if (fs.existsSync(exactPath)) {
+        _currentGdsPath = exactPath;
+        _onGdsReady.fire(exactPath);
+        await vscode.commands.executeCommand('setContext', 'supergds.gdsAvailable', true);
+        return exactPath;
     }
 
     if (fs.existsSync(gdsDirPath)) {

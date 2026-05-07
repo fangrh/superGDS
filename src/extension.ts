@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { detectForkStatus, getForkStatus } from './forkDetector';
-import { scanForGds, getCurrentGdsPath, getCurrentPythonFile } from './gdsWatcher';
+import { scanForGds, watchForGds, getCurrentGdsPath } from './gdsWatcher';
 import { parseGdsFile, initPythonBridge } from './pythonBridge';
 import { getOrCreatePanel } from './webview/panel';
 import { registerMessageHandlers } from './webview/provider';
@@ -94,22 +94,17 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Step 5: Listen for active editor changes to update GDS availability
+    // Step 5: Listen for active editor changes and watch for GDS files
     context.subscriptions.push(
         vscode.window.onDidChangeActiveTextEditor(async (editor) => {
             if (editor?.document?.languageId === 'python') {
-                const gdsPath = await scanForGds(editor.document.uri.fsPath);
-                await vscode.commands.executeCommand(
-                    'setContext',
-                    'supergds.gdsAvailable',
-                    !!gdsPath
-                );
+                // Scan for existing GDS and start watching for new ones
+                await scanForGds(editor.document.uri.fsPath);
+                await watchForGds(editor.document.uri.fsPath);
+                // Always show button on Python files (fork detection already set this)
+                await vscode.commands.executeCommand('setContext', 'supergds.gdsAvailable', true);
             } else {
-                await vscode.commands.executeCommand(
-                    'setContext',
-                    'supergds.gdsAvailable',
-                    false
-                );
+                await vscode.commands.executeCommand('setContext', 'supergds.gdsAvailable', false);
             }
         })
     );
