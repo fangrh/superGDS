@@ -98,7 +98,7 @@ async function openSourceFile(filePath: string, line?: number): Promise<void> {
             const range = lineToRange(doc, line);
             if (range) {
                 editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
-                editor.selection = new vscode.Selection(range.start, range.start);
+                editor.selection = new vscode.Selection(range.start, range.end);
                 editor.setDecorations(_sourceHighlight, [range]);
             }
         }
