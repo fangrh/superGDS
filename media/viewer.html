@@ -59,6 +59,18 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
 .zoom-btn { width: 32px; height: 32px; background: #1e1e2e; border: 1px solid #313244; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #6c7086; padding: 0; }
 .zoom-btn:hover { background: #313244; color: #cdd6f4; }
 .zoom-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#action-bar { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 100; }
+.action-btn { height: 32px; padding: 0 10px; background: #1e1e2e; border: 1px solid #313244; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; color: #6c7086; font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; white-space: nowrap; }
+.action-btn:hover { background: #313244; color: #cdd6f4; }
+.action-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.action-btn.running { opacity: 0.6; pointer-events: none; }
+.action-btn.running .run-icon { display: none; }
+.action-btn.running .spinner-icon { display: inline-block; }
+.action-btn .spinner-icon { display: none; width: 14px; height: 14px; border: 2px solid #6c7086; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#rebuild-overlay { display: none; position: absolute; inset: 0; background: rgba(26,26,46,0.7); z-index: 200; align-items: center; justify-content: center; color: #89b4fa; font-size: 14px; }
+#rebuild-overlay.visible { display: flex; }
+#rebuild-overlay .spinner { width: 28px; height: 28px; border: 3px solid #313244; border-top-color: #89b4fa; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 10px; }
 </style>
 </head>
 <body>
@@ -81,6 +93,25 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
                 <button class="zoom-btn" title="Fit view" onclick="fitView()">
                     <svg viewBox="0 0 24 24"><path d="M4 4h4M4 4v4M20 4h-4M20 4v4M4 20h4M4 20v-4M20 20h-4M20 20v-4"/></svg>
                 </button>
+            </div>
+            <div id="action-bar">
+                <button class="action-btn" id="run-btn" title="Rebuild script" onclick="rebuildScript()">
+                    <svg class="run-icon" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21" fill="currentColor" stroke="none"/></svg>
+                    <span class="spinner-icon"></span>
+                    Run
+                </button>
+                <button class="action-btn" title="Open in Claude Code" onclick="openClaudeCode()">
+                    <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 0"/><path d="M8 12h8M12 8v8" stroke-width="1.5"/></svg>
+                    Claude
+                </button>
+                <button class="action-btn" title="Open in Codex" onclick="openCodex()">
+                    <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
+                    Codex
+                </button>
+            </div>
+            <div id="rebuild-overlay">
+                <div class="spinner"></div>
+                Rebuilding...
             </div>
         </div>
         <div id="draw-toolbar">
@@ -1377,12 +1408,37 @@ function sendAskClaude() {
 }
 
 // ============================================================
+// Action bar: Run / Claude Code / Codex
+// ============================================================
+function rebuildScript() {
+    var btn = document.getElementById('run-btn');
+    btn.classList.add('running');
+    document.getElementById('rebuild-overlay').classList.add('visible');
+    vscode.postMessage({ type: 'rebuild' });
+}
+
+function openClaudeCode() {
+    vscode.postMessage({ type: 'openClaudeCode' });
+}
+
+function openCodex() {
+    vscode.postMessage({ type: 'openCodex' });
+}
+
+function onRebuildComplete() {
+    var btn = document.getElementById('run-btn');
+    btn.classList.remove('running');
+    document.getElementById('rebuild-overlay').classList.remove('visible');
+}
+
+// ============================================================
 // Handle messages from extension
 // ============================================================
 window.addEventListener('message', function(event) {
     var message = event.data;
     switch (message.type) {
         case 'loadGds':
+            onRebuildComplete();
             loadGdsData(
                 message.geojson,
                 message.gdsPath,
@@ -1404,6 +1460,9 @@ window.addEventListener('message', function(event) {
                 }
             });
             onSelectionChanged();
+            break;
+        case 'rebuildError':
+            onRebuildComplete();
             break;
     }
 });
