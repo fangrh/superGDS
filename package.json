@@ -47,7 +47,7 @@
     "vscode:prepublish": "tsc -p ./",
     "compile": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "test": "npm run vscode:prepublish && node --test out/webview/provenance.test.js out/pythonEnv.test.js"
+    "test": "npm run vscode:prepublish && node --test out/webview/provenance.test.js out/pythonEnv.test.js out/annotations.test.js"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

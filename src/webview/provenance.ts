@@ -2,6 +2,8 @@ export interface SourceLocation {
     file: string;
     line: number;
     functionName?: string;
+    loop_index?: number[];
+    array_index?: number[];
 }
 
 export interface ComponentProvenance {
@@ -10,11 +12,13 @@ export interface ComponentProvenance {
     function?: string;
     class_name?: string;
     loop_index?: number[];
+    array_index?: number[];
     call_chain?: Array<{ file?: string; line?: number | string; function?: string }>;
     call_stack?: string[];
     cell?: string;
     instance_name?: string;
     area_um2?: number;
+    source_text?: string;
 }
 
 export interface ComponentSelection {
@@ -32,6 +36,8 @@ export function getSourceChain(component: ComponentSelection): SourceLocation[] 
         file: provenance.file,
         line: provenance.line,
         functionName: provenance.function,
+        loop_index: provenance.loop_index,
+        array_index: provenance.array_index,
     });
 
     if (Array.isArray(provenance.call_chain)) {
@@ -98,7 +104,13 @@ export function formatSelectionForOutput(components: ComponentSelection[]): stri
 
 function addLocation(
     locations: SourceLocation[],
-    candidate: { file?: string; line?: number | string; functionName?: string }
+    candidate: {
+        file?: string;
+        line?: number | string;
+        functionName?: string;
+        loop_index?: number[];
+        array_index?: number[];
+    }
 ): void {
     const file = normalizeFile(candidate.file);
     const line = normalizeLine(candidate.line);
@@ -106,15 +118,45 @@ function addLocation(
         return;
     }
 
-    if (locations.some((location) => location.file === file && location.line === line)) {
+    const loop_index = normalizeIndex(candidate.loop_index);
+    const array_index = normalizeIndex(candidate.array_index);
+
+    if (locations.some((location) => sameSourceLocation(location, { file, line, loop_index, array_index }))) {
         return;
     }
 
-    locations.push({
+    const location: SourceLocation = {
         file,
         line,
         functionName: candidate.functionName || undefined,
-    });
+    };
+    if (loop_index) {
+        location.loop_index = loop_index;
+    }
+    if (array_index) {
+        location.array_index = array_index;
+    }
+    locations.push(location);
+}
+
+function sameSourceLocation(
+    a: SourceLocation,
+    b: Pick<SourceLocation, 'file' | 'line' | 'loop_index' | 'array_index'>
+): boolean {
+    return a.file === b.file
+        && a.line === b.line
+        && sameIndex(a.loop_index, b.loop_index)
+        && sameIndex(a.array_index, b.array_index);
+}
+
+function sameIndex(a?: number[], b?: number[]): boolean {
+    const left = a || [];
+    const right = b || [];
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function normalizeIndex(index?: number[]): number[] | undefined {
+    return index && index.length > 0 ? index : undefined;
 }
 
 function normalizeFile(file?: string): string | undefined {
@@ -177,10 +219,28 @@ export function formatMentions(
     locations: SourceLocation[],
     formatFile: (file: string) => string = (file) => file
 ): string {
-    return locations.map((loc) => `@${formatFile(loc.file)}:${loc.line}`).join(' ');
+    return locations
+        .map((loc) => `@${formatFile(loc.file)}:${loc.line}${formatSourceLocationIndexLabel(loc)}`)
+        .join(' ');
 }
 
 export function formatLoopLabel(provenance: ComponentProvenance): string {
-    if (!provenance.loop_index || provenance.loop_index.length === 0) return '';
-    return ` (loop index [${provenance.loop_index.join(', ')}])`;
+    if (provenance.array_index && provenance.array_index.length > 0) {
+        return ` (array index [${provenance.array_index.join(', ')}])`;
+    }
+    if (provenance.loop_index && provenance.loop_index.length > 0) {
+        return ` (loop index [${provenance.loop_index.join(', ')}])`;
+    }
+    return '';
+}
+
+export function formatSourceLocationIndexLabel(location: SourceLocation): string {
+    const parts: string[] = [];
+    if (location.loop_index && location.loop_index.length > 0) {
+        parts.push(`(loop index [${location.loop_index.join(', ')}])`);
+    }
+    if (location.array_index && location.array_index.length > 0) {
+        parts.push(`(array index [${location.array_index.join(', ')}])`);
+    }
+    return parts.length > 0 ? ` ${parts.join(' ')}` : '';
 }

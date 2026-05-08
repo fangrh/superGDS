@@ -2,8 +2,9 @@ import * as vscode from 'vscode';
 import { detectForkStatus, getForkStatus } from './forkDetector';
 import { findGdsOutput, getCurrentGdsPath } from './gdsWatcher';
 import { parseGdsFile, runPythonFile, initPythonBridge } from './pythonBridge';
+import { loadAnnotationsForPythonFile } from './annotations';
 import { getOrCreatePanel } from './webview/panel';
-import { registerMessageHandlers } from './webview/provider';
+import { registerMessageHandlers, setCurrentPythonFile } from './webview/provider';
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('superGDS extension activated');
@@ -64,12 +65,16 @@ export async function activate(context: vscode.ExtensionContext) {
                 registerMessageHandlers(panel);
 
                 const mode = getForkStatus() === 'fork' ? 'full' : 'partial';
+                const annotations = loadAnnotationsForPythonFile(pythonFile);
+                setCurrentPythonFile(pythonFile);
                 const readyListener = panel.webview.onDidReceiveMessage((msg) => {
                     if (msg.type === 'webviewReady') {
                         panel.webview.postMessage({
                             type: 'loadGds',
                             geojson,
                             gdsPath,
+                            pythonFile,
+                            annotations,
                             mode,
                         });
                         readyListener.dispose();

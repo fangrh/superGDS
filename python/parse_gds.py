@@ -223,20 +223,35 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id):
     # Merge loop_index from the placement sidecar entry.
     # The shape's own sidecar entry (from capture()) won't have loop_index,
     # but the placement entry (from track_instance()) does. The link is
-    # instance_prov_id stored in the shape's property 1004 tag.
+    # instance_prov_id stored in the instance property 1005 tag
+    # (or shape property 1004 for backward compat).
     if "loop_index" not in prov and sidecar_by_id:
+        instance_prov_id = None
+        # Try instance property (1005) first — current approach
         try:
-            placement_tag = _parse_json_property(
-                iterator.shape().property(PLACEMENT_PROP_KEY)
-            )
-            if placement_tag and "instance_prov_id" in placement_tag:
-                placement_entry = sidecar_by_id.get(
-                    placement_tag["instance_prov_id"]
+            path = iterator.path()
+            if path:
+                inst_tag = _parse_json_property(
+                    path[-1].inst().property(INSTANCE_PROP_KEY)
                 )
-                if placement_entry and "loop_index" in placement_entry:
-                    prov["loop_index"] = placement_entry["loop_index"]
+                if inst_tag and "instance_prov_id" in inst_tag:
+                    instance_prov_id = inst_tag["instance_prov_id"]
         except Exception:
             pass
+        # Fallback: shape property (1004) — legacy approach
+        if instance_prov_id is None:
+            try:
+                placement_tag = _parse_json_property(
+                    iterator.shape().property(PLACEMENT_PROP_KEY)
+                )
+                if placement_tag and "instance_prov_id" in placement_tag:
+                    instance_prov_id = placement_tag["instance_prov_id"]
+            except Exception:
+                pass
+        if instance_prov_id is not None:
+            placement_entry = sidecar_by_id.get(instance_prov_id)
+            if placement_entry and "loop_index" in placement_entry:
+                prov["loop_index"] = placement_entry["loop_index"]
 
     if instance_name:
         prov["instance_name"] = instance_name
@@ -244,6 +259,58 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id):
         prov["cell"] = cell_name
 
     return prov or None
+
+
+def _compute_array_element_index(iterator):
+    """Compute per-element [col, row] index for shapes inside array instances.
+
+    Uses the KLayout RecursiveShapeIterator's path to access the innermost
+    instance.  If it is an array (na > 1 or nb > 1), the element index is
+    computed from the transformation displacement relative to element [0, 0].
+    Returns a two-element list ``[col, row]`` or ``None``.
+    """
+    import klayout.db as _kdb
+
+    try:
+        path = iterator.path()
+        if not path:
+            return None
+
+        inst = path[-1].inst()
+        na, nb = inst.na, inst.nb
+        if na <= 1 and nb <= 1:
+            return None
+
+        # Current element displacement (DBU integer).
+        cur_disp = iterator.itrans().disp
+
+        # Compute element-[0,0] displacement by composing parent chain
+        # and the instance's base transformation.
+        parent = _kdb.Trans()
+        for i in range(len(path) - 1):
+            parent = parent * path[i].inst().cell_inst.trans
+        base_disp = (parent * inst.cell_inst.trans).disp
+
+        # Offset from element [0,0] in DBU.
+        dx = cur_disp.x - base_disp.x
+        dy = cur_disp.y - base_disp.y
+
+        # Array vectors in DBU (Vector — integer coordinates).
+        a, b = inst.a, inst.b
+        ax, ay, bx, by = a.x, a.y, b.x, b.y
+
+        # Solve  col*a + row*b = [dx, dy]  via 2×2 Cramer's rule.
+        det = ax * by - ay * bx
+        if det != 0:
+            col = round((dx * by - dy * bx) / det)
+            row = round((ax * dy - ay * dx) / det)
+        else:
+            col = round(dx / ax) if ax != 0 else 0
+            row = round(dy / by) if by != 0 else 0
+
+        return [max(0, min(int(col), na - 1)), max(0, min(int(row), nb - 1))]
+    except Exception:
+        return None
 
 
 def parse_gds(filepath: str) -> dict:
@@ -281,6 +348,9 @@ def parse_gds(filepath: str) -> dict:
                 }
                 provenance = _get_feature_provenance(it, provenance_by_cell, sidecar_by_id)
                 if provenance:
+                    array_idx = _compute_array_element_index(it)
+                    if array_idx is not None:
+                        provenance["array_index"] = array_idx
                     properties["provenance"] = provenance
                 features.append({
                     "type": "Feature",

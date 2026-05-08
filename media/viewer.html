@@ -55,19 +55,34 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
 .tool-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 #mode-indicator { position: absolute; top: 8px; right: 8px; padding: 4px 12px; background: #1e1e2e; color: #cdd6f4; font-size: 12px; border-radius: 4px; z-index: 100; border: 1px solid #313244; }
 #mode-indicator.partial { border-color: #e17055; color: #e17055; }
+#zoom-controls { position: absolute; top: 8px; left: 8px; display: flex; flex-direction: column; gap: 2px; z-index: 100; }
+.zoom-btn { width: 32px; height: 32px; background: #1e1e2e; border: 1px solid #313244; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #6c7086; padding: 0; }
+.zoom-btn:hover { background: #313244; color: #cdd6f4; }
+.zoom-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
 <body>
 <div id="sidebar">
     <h4>GDS File</h4>
     <div id="file-info" style="color:#6c7086;font-size:12px;margin-bottom:8px;"></div>
-    <button onclick="fitView()">Fit View</button>
     <div id="mode-indicator">Loading...</div>
     <div class="legend-section" id="legend"></div>
 </div>
 <div id="map-container">
     <div id="map-row">
-        <div id="map" style="flex:1;"></div>
+        <div id="map" style="flex:1; position: relative;">
+            <div id="zoom-controls">
+                <button class="zoom-btn" title="Zoom in" onclick="zoomIn()">
+                    <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <button class="zoom-btn" title="Zoom out" onclick="zoomOut()">
+                    <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <button class="zoom-btn" title="Fit view" onclick="fitView()">
+                    <svg viewBox="0 0 24 24"><path d="M4 4h4M4 4v4M20 4h-4M20 4v4M4 20h4M4 20v-4M20 20h-4M20 20v-4"/></svg>
+                </button>
+            </div>
+        </div>
         <div id="draw-toolbar">
             <button class="tool-btn active" data-mode="select" title="Select (1)" onclick="setMode('select')">
                 <svg viewBox="0 0 24 24"><path d="M5 3l14 9-7 2-3 7z"/></svg>
@@ -123,6 +138,7 @@ var repo = '';
 var branch = '';
 var currentFilePath = '';
 var currentGdsPath = '';
+var currentPythonFile = '';
 var currentMode2 = 'partial';
 var selectedFeatures = new ol.Collection();
 var ctrlPressed = false;
@@ -248,6 +264,10 @@ function deleteDrawn() {
     var drawn = selectedFeatures.getArray().filter(function(f) { return f.get('isDrawn'); });
     if (drawn.length === 0) return;
     drawn.forEach(function(f) {
+        var annotationPath = f.get('annotationPath');
+        if (annotationPath) {
+            vscode.postMessage({ type: 'deleteAnnotation', jsonPath: annotationPath });
+        }
         selectedFeatures.remove(f);
         drawSource.removeFeature(f);
     });
@@ -274,7 +294,7 @@ function onSelectionChanged() {
 
     var drawnFeatures = features.filter(function(f) { return f.get('isDrawn'); });
     var gdsFeatures = features.filter(function(f) { return !f.get('isDrawn'); });
-    postSelectedComponents(gdsFeatures);
+    postSelectedComponents(features);
 
     if (drawnFeatures.length > 0 && gdsFeatures.length === 0) {
         if (drawnFeatures.length === 1) {
@@ -302,10 +322,12 @@ function postSelectedComponents(features) {
 
 function componentsFromFeatures(features) {
     return features.map(function(f) {
+        var geom = f.getGeometry();
+        var extent = geom ? geom.getExtent() : [0, 0, 0, 0];
         return {
             provId: f.ol_uid,
             layer: f.get('layer') || '',
-            bbox: (f.get('meta') || {}).bbox || [],
+            bbox: geomExtentToBbox(extent),
             provenance: f.get('provenance') || {}
         };
     });
@@ -337,14 +359,25 @@ function showMultiInspect(features) {
             var filePath = prov.file.replace(/\\/g, '/');
             if (!fileMap[filePath]) fileMap[filePath] = [];
             var ln = parseInt(prov.line);
-            if (fileMap[filePath].indexOf(ln) === -1) fileMap[filePath].push(ln);
+            var exists = fileMap[filePath].some(function(e) { return e.line === ln; });
+            if (!exists) {
+                var entry = { line: ln };
+                if (prov.loop_index && prov.loop_index.length > 0) {
+                    entry.loop_index = prov.loop_index;
+                }
+                if (prov.array_index && prov.array_index.length > 0) {
+                    entry.array_index = prov.array_index;
+                }
+                fileMap[filePath].push(entry);
+            }
         }
         // Add call chain files so AI agents see the full compilation chain
         var chain = _normalizeCallChain(prov);
         chain.forEach(function(cc) {
             var cfp = (cc.file || '').replace(/\\/g, '/');
             if (cfp && !fileMap[cfp]) fileMap[cfp] = [];
-            if (cfp && fileMap[cfp].indexOf(cc.line) === -1) fileMap[cfp].push(cc.line);
+            var exists = fileMap[cfp].some(function(e) { return e.line === cc.line; });
+            if (!exists) fileMap[cfp].push({ line: cc.line });
         });
     });
 
@@ -355,7 +388,8 @@ function showMultiInspect(features) {
         addKV(panel, 'files', fileKeys.length + ' file(s) with provenance');
         fileKeys.forEach(function(fp) {
             var base = fp.split('/').pop();
-            addKV(panel, '', base + ': lines [' + fileMap[fp].sort(function(a,b){return a-b;}).join(', ') + ']');
+            var lineNums = fileMap[fp].sort(function(a,b){return a.line - b.line;}).map(function(e) { return e.line; });
+            addKV(panel, '', base + ': lines [' + lineNums.join(', ') + ']');
         });
     } else {
         addKV(panel, 'provenance', 'No provenance data in selection');
@@ -364,14 +398,16 @@ function showMultiInspect(features) {
     // Build component list with bbox, grouped by file
     var componentList = [];
     features.forEach(function(f, idx) {
-        var meta = f.get('meta') || {};
-        var bbox = meta.bbox || [];
+        var geom = f.getGeometry();
+        var bbox = geom ? geomExtentToBbox(geom.getExtent()) : [];
         var prov = f.get('provenance') || {};
         componentList.push({
             idx: idx + 1,
             file: prov.file || '',
             line: prov.line ? parseInt(prov.line) : null,
-            bbox: bbox
+            bbox: bbox,
+            loop_index: prov.loop_index || null,
+            array_index: prov.array_index || null
         });
     });
 
@@ -406,7 +442,9 @@ function showMultiInspect(features) {
             comps.forEach(function(comp, ci) {
                 var bboxStr = '[' + comp.bbox.map(function(v) { return v.toFixed(4); }).join(', ') + ']';
                 var lineNum = comp.line !== null ? comp.line : '?';
-                addKV(panel, '', '  Component ' + (ci + 1) + ': Line ' + lineNum + ', bbox:' + bboxStr);
+                var loopStr = comp.loop_index ? ' (loop index [' + comp.loop_index.join(', ') + '])' : '';
+                loopStr += comp.array_index ? ' (array index [' + comp.array_index.join(', ') + '])' : '';
+                addKV(panel, '', '  Component ' + (ci + 1) + ': Line ' + lineNum + loopStr + ', bbox:' + bboxStr);
             });
         });
     }
@@ -435,16 +473,17 @@ function updateMultiSourcePanel(fileMap) {
         section.setAttribute('data-file', fp);
 
         var base = fp.split('/').pop();
-        var lines = fileMap[fp].sort(function(a,b){return a-b;});
+        var entries = fileMap[fp].sort(function(a,b){return a.line - b.line;});
 
         var header = document.createElement('div');
         header.className = 'file-section-header';
+        var lineNums = entries.map(function(e) { return e.line; });
         header.innerHTML = '<span class="fname">' + esc(base) + '</span>'
-            + '<span class="lines">lines [' + lines.join(', ') + ']</span>';
+            + '<span class="lines">lines [' + lineNums.join(', ') + ']</span>';
 
         var body = document.createElement('div');
         body.className = 'file-section-body open';
-        renderSourceLinks(fp, lines, body, fileIndex === 0);
+        renderSourceLinks(fp, entries, body, fileIndex === 0);
 
         section.appendChild(header);
         section.appendChild(body);
@@ -452,17 +491,19 @@ function updateMultiSourcePanel(fileMap) {
     });
 }
 
-function renderSourceLinks(filePath, lines, container, primaryFile) {
+function renderSourceLinks(filePath, entries, container, primaryFile) {
     container.innerHTML = '';
-    lines.forEach(function(line, idx) {
+    entries.forEach(function(entry, idx) {
         var btn = document.createElement('button');
         btn.className = 'source-link' + (primaryFile && idx === 0 ? ' primary' : '');
         btn.type = 'button';
-        btn.innerHTML = '<span class="loc">' + esc(filePath + ':' + line) + '</span>'
-            + '<span class="fn">Open source</span>';
+        var loopStr = entry.loop_index ? ' (loop index [' + entry.loop_index.join(', ') + '])' : '';
+        loopStr += entry.array_index ? ' (array index [' + entry.array_index.join(', ') + '])' : '';
+        btn.innerHTML = '<span class="loc">' + esc(filePath + ':' + entry.line) + '</span>'
+            + '<span class="fn">' + loopStr + 'Open source</span>';
         btn.onclick = function(e) {
             e.stopPropagation();
-            vscode.postMessage({ type: 'requestSource', file: filePath, line: line });
+            vscode.postMessage({ type: 'requestSource', file: filePath, line: entry.line });
         };
         container.appendChild(btn);
     });
@@ -509,7 +550,7 @@ var map = new ol.Map({
     target: 'map',
     layers: [vectorLayer, drawLayer],
     view: new ol.View({ center: [0, 0], zoom: 2, minZoom: -20, maxZoom: 40 }),
-    controls: [new ol.control.Zoom()]
+    controls: []
 });
 
 // Select interaction -- multi-select capable
@@ -638,6 +679,16 @@ Object.keys(drawInteractions).forEach(function(key) {
         feature.set('isDrawn', true);
         feature.set('shapeType', key);
         feature.set('selected', false);
+        var clientId = 'drawn_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        feature.set('clientId', clientId);
+        try {
+            var payload = drawnFeaturePayload(feature);
+            if (payload) {
+                vscode.postMessage({ type: 'saveAnnotation', clientId: clientId, shape: payload });
+            }
+        } catch (err) {
+            console.error('superGDS: annotation serialization failed', err);
+        }
         setTimeout(function() { setMode('select'); }, 50);
     });
 });
@@ -729,10 +780,29 @@ map.on('moveend', function() {
 });
 
 // ============================================================
-// fitView
+// Zoom controls
 // ============================================================
+function zoomIn() {
+    var view = map.getView();
+    var zoom = view.getZoom();
+    view.animate({ zoom: zoom + 1, duration: 200 });
+}
+
+function zoomOut() {
+    var view = map.getView();
+    var zoom = view.getZoom();
+    view.animate({ zoom: zoom - 1, duration: 200 });
+}
+
+// fitView
 function fitView() {
     var extent = source.getExtent();
+    var drawnExtent = drawSource.getExtent();
+    if (drawnExtent && isFinite(drawnExtent[0])) {
+        extent = extent && isFinite(extent[0])
+            ? ol.extent.extend(extent.slice(), drawnExtent)
+            : drawnExtent;
+    }
     if (extent && isFinite(extent[0])) {
         map.getView().fit(extent, { padding: [40, 40, 40, 40], duration: 300 });
     }
@@ -741,11 +811,14 @@ function fitView() {
 // ============================================================
 // Load GDS data (receives GeoJSON from extension via postMessage)
 // ============================================================
-function loadGdsData(geojson, gdsPath, mode) {
+function loadGdsData(geojson, gdsPath, pythonFile, annotations, mode) {
     currentGdsPath = gdsPath;
+    currentPythonFile = pythonFile || '';
     currentFilePath = gdsPath;
     currentMode2 = mode;
     source.clear();
+    drawSource.clear();
+    selectedFeatures.clear();
     allFeatures = [];
     layerColors = {};
 
@@ -783,6 +856,15 @@ function loadGdsData(geojson, gdsPath, mode) {
     });
 
     if (allFeatures.length > 0) fitView();
+
+    (annotations || []).forEach(function(annotation) {
+        drawSource.addFeature(featureFromSavedAnnotation(annotation));
+    });
+
+    if (currentPythonFile) {
+        vscode.postMessage({ type: 'viewerContext', pythonFile: currentPythonFile });
+    }
+
     clearInspect();
     buildLegend();
 
@@ -806,6 +888,71 @@ function polyMeta(ring) {
 
 function min(arr) { return arr.reduce(function(a, b) { return Math.min(a, b); }); }
 function max(arr) { return arr.reduce(function(a, b) { return Math.max(a, b); }); }
+
+// ============================================================
+// Annotation serialization helpers
+// ============================================================
+function geomExtentToBbox(extent) {
+    return [extent[0], extent[1], extent[2], extent[3]];
+}
+
+function drawnFeaturePayload(feature) {
+    var geom = feature.getGeometry();
+    if (!geom) return null;
+    var shapeType = feature.get('shapeType') || 'shape';
+    var extent = geom.getExtent();
+    var bbox = geomExtentToBbox(extent);
+    var geometry = { type: geom.getType(), bbox: bbox };
+    if (geom.getType() === 'Circle') {
+        var center = geom.getCenter();
+        geometry.center = [center[0], center[1]];
+        geometry.radius = geom.getRadius();
+    }
+    var ring = [];
+    if (geom.getType() === 'Polygon') {
+        var coords = geom.getCoordinates();
+        if (coords && coords[0]) ring = coords[0];
+    }
+    var meta = ring.length > 0
+        ? { area_um2: polyMeta(ring).area_um2, vertex_count: polyMeta(ring).vertex_count }
+        : { area_um2: shapeType === 'circle' ? Math.round(Math.PI * Math.pow(geom.getRadius(), 2) * 1e4) / 1e4 : 0, vertex_count: 0 };
+    return {
+        shapeType: shapeType,
+        geometry: geometry,
+        meta: meta
+    };
+}
+
+function featureFromSavedAnnotation(annotation) {
+    var shapeType = annotation.shapeType || 'shape';
+    var g = annotation.geometry || {};
+    var bbox = g.bbox || [0, 0, 1, 1];
+    var geom;
+    if (shapeType === 'circle' && g.center && g.radius !== undefined) {
+        geom = new ol.geom.Circle(g.center, g.radius);
+    } else if (shapeType === 'line') {
+        geom = new ol.geom.LineString([[bbox[0], bbox[1]], [bbox[2], bbox[3]]]);
+    } else {
+        geom = new ol.geom.Polygon([[
+            [bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]], [bbox[0], bbox[1]]
+        ]]);
+    }
+    var feature = new ol.Feature({ geometry: geom });
+    feature.set('isDrawn', true);
+    feature.set('shapeType', shapeType);
+    feature.set('annotationPath', annotation.jsonPath);
+    feature.set('selected', false);
+    feature.set('provenance', annotation.provenance || {});
+    feature.set('meta', annotation.meta || {});
+    return feature;
+}
+
+function applySavedAnnotation(feature, annotation) {
+    feature.set('annotationPath', annotation.jsonPath);
+    feature.set('provenance', annotation.provenance || {});
+    feature.set('meta', annotation.meta || {});
+    feature.set('shapeType', annotation.shapeType || feature.get('shapeType') || 'shape');
+}
 
 // ============================================================
 // Legend
@@ -862,7 +1009,8 @@ function showInspect(feature) {
     var layer = feature.get('layer') || '?';
     var provenance = feature.get('provenance') || {};
     var meta = feature.get('meta') || {};
-    var bbox = meta.bbox || [];
+    var geom = feature.getGeometry();
+    var bbox = geom ? geomExtentToBbox(geom.getExtent()) : [];
 
     var panel = document.getElementById('info-panel');
     panel.innerHTML = '';
@@ -880,6 +1028,9 @@ function showInspect(feature) {
             var fileLabel = provenance.file + ':' + provenance.line;
             if (provenance.loop_index && provenance.loop_index.length > 0) {
                 fileLabel += ' (loop index [' + provenance.loop_index.join(', ') + '])';
+            }
+            if (provenance.array_index && provenance.array_index.length > 0) {
+                fileLabel += ' (array index [' + provenance.array_index.join(', ') + '])';
             }
             addKV(d, 'file', fileLabel);
         }
@@ -907,13 +1058,21 @@ function showInspect(feature) {
     if (provenance.file) {
         var fileMap = {};
         var fp = provenance.file.replace(/\\/g, '/');
-        fileMap[fp] = [parseInt(provenance.line)];
+        var primaryEntry = { line: parseInt(provenance.line) };
+        if (provenance.loop_index && provenance.loop_index.length > 0) {
+            primaryEntry.loop_index = provenance.loop_index;
+        }
+        if (provenance.array_index && provenance.array_index.length > 0) {
+            primaryEntry.array_index = provenance.array_index;
+        }
+        fileMap[fp] = [primaryEntry];
         // Add call chain files so AI agents see the full compilation chain
         var chain = _normalizeCallChain(provenance);
         chain.forEach(function(cc) {
             var cfp = (cc.file || '').replace(/\\/g, '/');
             if (cfp && !fileMap[cfp]) fileMap[cfp] = [];
-            if (cfp && fileMap[cfp].indexOf(cc.line) === -1) fileMap[cfp].push(cc.line);
+            var exists = fileMap[cfp].some(function(e) { return e.line === cc.line; });
+            if (!exists) fileMap[cfp].push({ line: cc.line });
         });
         updateMultiSourcePanel(fileMap);
     } else {
@@ -1019,7 +1178,19 @@ function showDrawnInspect(feature) {
     if (sg.center) addKV(d, 'center', JSON.stringify(sg.center));
     panel.appendChild(d);
 
-    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Drawn shape -- no source code</p>';
+    var provenance = feature.get('provenance') || {};
+    if (feature.get('annotationPath')) {
+        addKV(panel, 'json', feature.get('annotationPath'), true);
+    }
+
+    if (provenance.file) {
+        var fp = provenance.file.replace(/\\/g, '/');
+        var fileMap = {};
+        fileMap[fp] = [{ line: parseInt(provenance.line) || 1 }];
+        updateMultiSourcePanel(fileMap);
+    } else {
+        document.getElementById('source-panel').innerHTML = '<p class="placeholder">Saving drawn annotation...</p>';
+    }
 }
 
 function showDrawnMultiInspect(features) {
@@ -1039,7 +1210,20 @@ function showDrawnMultiInspect(features) {
         if (sg.area !== undefined) addKV(panel, 'area', sg.area + ' um2');
     });
 
-    document.getElementById('source-panel').innerHTML = '<p class="placeholder">Drawn shapes -- no source code</p>';
+    var fileMap = {};
+    features.forEach(function(f) {
+        var prov = f.get('provenance') || {};
+        if (prov.file) {
+            var fp = prov.file.replace(/\\/g, '/');
+            if (!fileMap[fp]) fileMap[fp] = [];
+            fileMap[fp].push({ line: parseInt(prov.line) || 1 });
+        }
+    });
+    if (Object.keys(fileMap).length > 0) {
+        updateMultiSourcePanel(fileMap);
+    } else {
+        document.getElementById('source-panel').innerHTML = '<p class="placeholder">Drawn shapes -- no source code</p>';
+    }
 }
 
 function showMixedInspect(gdsFeatures, drawnFeatures) {
@@ -1112,7 +1296,9 @@ function copyYAML(e) {
         gdsFeatures.forEach(function(f, idx) {
             var prov = f.get('provenance') || {};
             var meta = f.get('meta') || {};
-            var bboxStr = '[' + (meta.bbox || []).map(function(v) { return v.toFixed(4); }).join(', ') + ']';
+            var g = f.getGeometry();
+            var fBbox = g ? geomExtentToBbox(g.getExtent()) : [];
+            var bboxStr = '[' + fBbox.map(function(v) { return v.toFixed(4); }).join(', ') + ']';
             var base = (prov.file || '').split('/').pop();
             var lineNum = prov.line || '?';
             lines.push(base + ' Component ' + (idx + 1) + ': Line ' + lineNum + ', bbox:' + bboxStr);
@@ -1197,13 +1383,27 @@ window.addEventListener('message', function(event) {
     var message = event.data;
     switch (message.type) {
         case 'loadGds':
-            loadGdsData(message.geojson, message.gdsPath, message.mode);
+            loadGdsData(
+                message.geojson,
+                message.gdsPath,
+                message.pythonFile || '',
+                message.annotations || [],
+                message.mode
+            );
             break;
         case 'setMode':
             currentMode2 = message.mode;
             var indicator = document.getElementById('mode-indicator');
             indicator.textContent = message.mode === 'full' ? 'Provenance: ON' : 'Provenance: OFF';
             indicator.className = message.mode === 'full' ? '' : 'partial';
+            break;
+        case 'annotationSaved':
+            drawSource.getFeatures().forEach(function(f) {
+                if (f.get('clientId') === message.clientId) {
+                    applySavedAnnotation(f, message.annotation);
+                }
+            });
+            onSelectionChanged();
             break;
     }
 });

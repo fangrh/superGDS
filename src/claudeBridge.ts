@@ -5,7 +5,8 @@ interface ComponentProvenance {
     function?: string;
     line?: number | string;
     class_name?: string;
-    call_index?: number;
+    loop_index?: number[];
+    array_index?: number[];
     call_chain?: Array<{ file?: string; function?: string; line?: number | string }>;
     cell?: string;
     instance_name?: string;
@@ -48,7 +49,7 @@ function buildPrompt(components: ComponentProvenance[], question: string): strin
         lines.push(`### ${label}${layerInfo}`);
 
         if (prov.file && prov.line) {
-            lines.push(`- Source: ${prov.file}:${prov.line} in \`${prov.function || '<module>'}\``);
+            lines.push(`- Source: ${prov.file}:${prov.line}${formatIndexLabel(prov)} in \`${prov.function || '<module>'}\``);
         }
         if (prov.class_name) {
             lines.push(`- Class: ${prov.class_name}`);
@@ -80,4 +81,15 @@ function buildPrompt(components: ComponentProvenance[], question: string): strin
     lines.push(question);
 
     return lines.join('\n');
+}
+
+function formatIndexLabel(prov: ComponentProvenance): string {
+    const labels: string[] = [];
+    if (prov.loop_index && prov.loop_index.length > 0) {
+        labels.push(`(loop index [${prov.loop_index.join(', ')}])`);
+    }
+    if (prov.array_index && prov.array_index.length > 0) {
+        labels.push(`(array index [${prov.array_index.join(', ')}])`);
+    }
+    return labels.length > 0 ? ` ${labels.join(' ')}` : '';
 }

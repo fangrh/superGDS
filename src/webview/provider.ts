@@ -1,10 +1,12 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { askClaude } from '../claudeBridge';
+import { deleteAnnotation, saveAnnotation, type DrawnShapePayload } from '../annotations';
 import {
     getSourceChain,
     getSelectionSourceLocations,
     formatMentions,
+    formatSourceLocationIndexLabel,
     type ComponentSelection,
     type SourceLocation,
 } from './provenance';
@@ -54,6 +56,32 @@ export function registerMessageHandlers(
                     console.log('GDS Viewer: shape drawn', message.geometry);
                     break;
                 }
+
+                case 'viewerContext':
+                    _currentPythonFile = String(message.pythonFile || '');
+                    break;
+
+                case 'saveAnnotation': {
+                    if (!_currentPythonFile) {
+                        vscode.window.showErrorMessage('Cannot save annotation: no Python source file is active.');
+                        break;
+                    }
+                    const saved = saveAnnotation(_currentPythonFile, message.shape as DrawnShapePayload);
+                    panel.webview.postMessage({
+                        type: 'annotationSaved',
+                        clientId: message.clientId,
+                        annotation: saved,
+                    });
+                    break;
+                }
+
+                case 'deleteAnnotation': {
+                    const jsonPath = String(message.jsonPath || '');
+                    if (jsonPath) {
+                        deleteAnnotation(jsonPath);
+                    }
+                    break;
+                }
             }
         },
         undefined,
@@ -62,6 +90,11 @@ export function registerMessageHandlers(
 }
 
 let _currentSelection: ComponentSelection[] = [];
+let _currentPythonFile = '';
+
+export function setCurrentPythonFile(pythonFile: string): void {
+    _currentPythonFile = pythonFile;
+}
 const _sourceHighlight = vscode.window.createTextEditorDecorationType({
     backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
     border: '1px solid',
@@ -211,7 +244,7 @@ function toWorkspaceRelativePath(filePath: string): string {
 
 function formatClaudeChatMentions(locations: SourceLocation[]): string {
     return locations
-        .map((loc) => `@${toWorkspaceRelativePath(loc.file)}#L${loc.line}`)
+        .map((loc) => `@${toWorkspaceRelativePath(loc.file)}#L${loc.line}${formatSourceLocationIndexLabel(loc)}`)
         .join(' ');
 }
 

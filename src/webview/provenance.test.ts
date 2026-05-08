@@ -139,6 +139,36 @@ test('getSelectionSourceLocations matches source panel file groups', () => {
     ]);
 });
 
+test('getSelectionSourceLocations keeps loop and array indexes on primary sources', () => {
+    const components: ComponentSelection[] = [
+        {
+            provId: 'c1',
+            layer: '1/0',
+            bbox: [],
+            provenance: {
+                file: 'cells/ring.py',
+                line: 42,
+                loop_index: [3],
+                array_index: [1, 2],
+                call_chain: [
+                    { file: 'top.py', line: 20 },
+                ],
+            },
+        },
+    ];
+
+    assert.deepEqual(getSelectionSourceLocations(components), [
+        {
+            file: 'cells/ring.py',
+            line: 42,
+            functionName: undefined,
+            loop_index: [3],
+            array_index: [1, 2],
+        },
+        { file: 'top.py', line: 20, functionName: undefined },
+    ]);
+});
+
 test('formatMentions joins file:line with @ prefix', () => {
     const locations: SourceLocation[] = [
         { file: 'dir/a.py', line: 359 },
@@ -149,6 +179,17 @@ test('formatMentions joins file:line with @ prefix', () => {
     assert.equal(
         formatMentions(locations),
         '@dir/a.py:359 @dir/a.py:504 @dir/a.py:522'
+    );
+});
+
+test('formatMentions includes loop and array indexes for Claude context', () => {
+    const locations: SourceLocation[] = [
+        { file: 'dir/a.py', line: 359, loop_index: [2], array_index: [1, 3] },
+    ];
+
+    assert.equal(
+        formatMentions(locations),
+        '@dir/a.py:359 (loop index [2]) (array index [1, 3])'
     );
 });
 
@@ -171,8 +212,8 @@ test('formatLoopLabel returns label for single loop index', () => {
     assert.equal(formatLoopLabel({ loop_index: [3] }), ' (loop index [3])');
 });
 
-test('formatLoopLabel returns label for multi-dim loop index', () => {
-    assert.equal(formatLoopLabel({ loop_index: [3, 5] }), ' (loop index [3, 5])');
+test('formatLoopLabel returns label for multi-dim array index', () => {
+    assert.equal(formatLoopLabel({ array_index: [3, 5] }), ' (array index [3, 5])');
 });
 
 test('formatLoopLabel returns empty string when no loop_index', () => {
@@ -203,4 +244,26 @@ test('selection output appends loop index to primary source', () => {
     const output = formatSelectionForOutput(components);
     assert.match(output, /cells\/ring\.py:42 \(ring\) \(loop index \[3\]\)/);
     assert.match(output, /top\.py:10 \(top\)/);
+});
+
+test('drawn annotation provenance is formatted for Claude source context', () => {
+    const components: ComponentSelection[] = [
+        {
+            provId: 'drawn_1',
+            layer: 'annotation',
+            bbox: [0, 0, 10, 5],
+            provenance: {
+                cell: 'drawn rectangle',
+                file: '/repo/chip_rectangle_1.json',
+                line: 1,
+                function: 'drawn annotation',
+                source_text: 'superGDS drawn shape annotation',
+            },
+        },
+    ];
+
+    const output = formatSelectionForOutput(components);
+
+    assert.match(output, /drawn rectangle/);
+    assert.match(output, /\/repo\/chip_rectangle_1\.json:1 \(drawn annotation\)/);
 });
