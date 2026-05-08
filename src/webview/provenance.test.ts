@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterLocationsByFile, formatMentions, formatSelectionForOutput, getSelectionSourceLocations, getSourceChain, type ComponentSelection, type SourceLocation } from './provenance';
+import { filterLocationsByFile, formatLoopLabel, formatMentions, formatSelectionForOutput, getSelectionSourceLocations, getSourceChain, type ComponentSelection, type SourceLocation } from './provenance';
 
 test('source chain starts with primary source and removes duplicate call-chain locations', () => {
     const component: ComponentSelection = {
@@ -165,4 +165,42 @@ test('formatMentions supports custom file display paths', () => {
 
 test('formatMentions returns empty string for empty array', () => {
     assert.equal(formatMentions([]), '');
+});
+
+test('formatLoopLabel returns label for single loop index', () => {
+    assert.equal(formatLoopLabel({ loop_index: [3] }), ' (loop index [3])');
+});
+
+test('formatLoopLabel returns label for multi-dim loop index', () => {
+    assert.equal(formatLoopLabel({ loop_index: [3, 5] }), ' (loop index [3, 5])');
+});
+
+test('formatLoopLabel returns empty string when no loop_index', () => {
+    assert.equal(formatLoopLabel({}), '');
+    assert.equal(formatLoopLabel({ loop_index: [] }), '');
+});
+
+test('selection output appends loop index to primary source', () => {
+    const components: ComponentSelection[] = [
+        {
+            provId: 'c1',
+            layer: '1/0',
+            bbox: [],
+            provenance: {
+                cell: 'ring',
+                file: 'cells/ring.py',
+                line: 42,
+                function: 'ring',
+                loop_index: [3],
+                call_chain: [
+                    { file: 'cells/ring.py', line: 42, function: 'ring' },
+                    { file: 'top.py', line: 10, function: 'top' },
+                ],
+            },
+        },
+    ];
+
+    const output = formatSelectionForOutput(components);
+    assert.match(output, /cells\/ring\.py:42 \(ring\) \(loop index \[3\]\)/);
+    assert.match(output, /top\.py:10 \(top\)/);
 });

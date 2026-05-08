@@ -9,7 +9,7 @@ export interface ComponentProvenance {
     line?: number | string;
     function?: string;
     class_name?: string;
-    call_index?: number;
+    loop_index?: number[];
     call_chain?: Array<{ file?: string; line?: number | string; function?: string }>;
     call_stack?: string[];
     cell?: string;
@@ -83,7 +83,10 @@ export function formatSelectionForOutput(components: ComponentSelection[]): stri
             lines.push('   Source chain:');
             for (const location of chain) {
                 const fn = location.functionName ? ` (${location.functionName})` : '';
-                lines.push(`   - ${location.file}:${location.line}${fn}`);
+                const loop = (location === chain[0] && provenance.loop_index)
+                    ? formatLoopLabel(provenance)
+                    : '';
+                lines.push(`   - ${location.file}:${location.line}${fn}${loop}`);
             }
         } else {
             lines.push('   Source chain: unavailable');
@@ -175,4 +178,9 @@ export function formatMentions(
     formatFile: (file: string) => string = (file) => file
 ): string {
     return locations.map((loc) => `@${formatFile(loc.file)}:${loc.line}`).join(' ');
+}
+
+export function formatLoopLabel(provenance: ComponentProvenance): string {
+    if (!provenance.loop_index || provenance.loop_index.length === 0) return '';
+    return ` (loop index [${provenance.loop_index.join(', ')}])`;
 }
