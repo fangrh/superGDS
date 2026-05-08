@@ -9,7 +9,7 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
-#sidebar { width: 220px; background: #1e1e2e; color: #cdd6f4; overflow-y: auto; padding: 12px; flex-shrink: 0; }
+#sidebar { width: 120px; background: #1e1e2e; color: #cdd6f4; overflow-y: auto; padding: 8px; flex-shrink: 0; }
 #sidebar h4 { margin: 0 0 8px 0; color: #89b4fa; font-size: 13px; }
 #sidebar button { width: 100%; margin-bottom: 8px; padding: 6px 10px; background: #45475a; color: #cdd6f4; border: 1px solid #585b70; border-radius: 4px; cursor: pointer; font-size: 12px; }
 #sidebar button:hover { background: #585b70; }
@@ -33,6 +33,9 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
 .tab-btn { padding: 2px 8px; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 11px; color: #6c7086; border-bottom: 2px solid transparent; }
 .tab-btn.active { color: #89b4fa; border-bottom-color: #89b4fa; }
 .tab-btn:hover { color: #cdd6f4; }
+#claude-mode { background: #1e1e2e; color: #cdd6f4; border: 1px solid #313244; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; outline: none; }
+#claude-mode:hover { border-color: #585b70; }
+#claude-mode option { background: #1e1e2e; color: #cdd6f4; }
 #source-panel { height: 100%; overflow-y: auto; }
 .source-link { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px; border: 0; border-left: 3px solid transparent; background: transparent; color: #cdd6f4; cursor: pointer; font: 12px/1.5 'Cascadia Code', 'Fira Code', 'Consolas', monospace; text-align: left; }
 .source-link:hover { background: #313244; border-left-color: #89b4fa; }
@@ -53,20 +56,16 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
 .tool-btn:hover { background: #313244; color: #cdd6f4; }
 .tool-btn.active { background: #45475a; color: #89b4fa; border-color: #89b4fa; }
 .tool-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-#mode-indicator { position: absolute; top: 8px; right: 8px; padding: 4px 12px; background: #1e1e2e; color: #cdd6f4; font-size: 12px; border-radius: 4px; z-index: 100; border: 1px solid #313244; }
+#mode-indicator { padding: 4px 8px; background: #1e1e2e; color: #a6e3a1; font-size: 11px; border-radius: 4px; border: 1px solid #313244; margin-bottom: 8px; text-align: center; }
 #mode-indicator.partial { border-color: #e17055; color: #e17055; }
 #zoom-controls { position: absolute; top: 8px; left: 8px; display: flex; flex-direction: column; gap: 2px; z-index: 100; }
 .zoom-btn { width: 32px; height: 32px; background: #1e1e2e; border: 1px solid #313244; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #6c7086; padding: 0; }
 .zoom-btn:hover { background: #313244; color: #cdd6f4; }
 .zoom-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-#action-bar { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 100; }
-.action-btn { height: 32px; padding: 0 10px; background: #1e1e2e; border: 1px solid #313244; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; color: #6c7086; font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; white-space: nowrap; }
-.action-btn:hover { background: #313244; color: #cdd6f4; }
-.action-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.action-btn.running { opacity: 0.6; pointer-events: none; }
-.action-btn.running .run-icon { display: none; }
-.action-btn.running .spinner-icon { display: inline-block; }
-.action-btn .spinner-icon { display: none; width: 14px; height: 14px; border: 2px solid #6c7086; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
+.zoom-btn.running { opacity: 0.6; pointer-events: none; }
+.zoom-btn.running .run-icon { display: none; }
+.zoom-btn.running .spinner-icon { display: inline-block; }
+.zoom-btn .spinner-icon { display: none; width: 14px; height: 14px; border: 2px solid #6c7086; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #rebuild-overlay { display: none; position: absolute; inset: 0; background: rgba(26,26,46,0.7); z-index: 200; align-items: center; justify-content: center; color: #89b4fa; font-size: 14px; }
 #rebuild-overlay.visible { display: flex; }
@@ -75,15 +74,16 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
 </head>
 <body>
 <div id="sidebar">
-    <h4>GDS File</h4>
-    <div id="file-info" style="color:#6c7086;font-size:12px;margin-bottom:8px;"></div>
-    <div id="mode-indicator">Loading...</div>
     <div class="legend-section" id="legend"></div>
 </div>
 <div id="map-container">
     <div id="map-row">
         <div id="map" style="flex:1; position: relative;">
             <div id="zoom-controls">
+                <button class="zoom-btn" id="run-btn" title="Rebuild script" onclick="rebuildScript()">
+                    <svg class="run-icon" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21" fill="currentColor" stroke="none"/></svg>
+                    <span class="spinner-icon"></span>
+                </button>
                 <button class="zoom-btn" title="Zoom in" onclick="zoomIn()">
                     <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
@@ -92,21 +92,6 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
                 </button>
                 <button class="zoom-btn" title="Fit view" onclick="fitView()">
                     <svg viewBox="0 0 24 24"><path d="M4 4h4M4 4v4M20 4h-4M20 4v4M4 20h4M4 20v-4M20 20h-4M20 20v-4"/></svg>
-                </button>
-            </div>
-            <div id="action-bar">
-                <button class="action-btn" id="run-btn" title="Rebuild script" onclick="rebuildScript()">
-                    <svg class="run-icon" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21" fill="currentColor" stroke="none"/></svg>
-                    <span class="spinner-icon"></span>
-                    Run
-                </button>
-                <button class="action-btn" title="Open in Claude Code" onclick="openClaudeCode()">
-                    <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 0"/><path d="M8 12h8M12 8v8" stroke-width="1.5"/></svg>
-                    Claude
-                </button>
-                <button class="action-btn" title="Open in Codex" onclick="openCodex()">
-                    <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
-                    Codex
                 </button>
             </div>
             <div id="rebuild-overlay">
@@ -146,6 +131,11 @@ body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-sy
                 <span class="tab-btn" data-tab="info" onclick="switchTab(event, 'info')">Info</span>
             </span>
             <span style="display:flex;align-items:center;gap:6px;">
+                <select id="claude-mode" title="Claude Code communication mode">
+                    <option value="auto">Auto</option>
+                    <option value="clipboard">Clipboard</option>
+                    <option value="off">Off</option>
+                </select>
                 <span onclick="toggleConsole()" title="Collapse" style="cursor:pointer;color:#6c7086;font-size:14px;">&#9660;</span>
             </span>
         </div>
@@ -345,9 +335,11 @@ function onSelectionChanged() {
 }
 
 function postSelectedComponents(features) {
+    var mode = document.getElementById('claude-mode').value;
     vscode.postMessage({
         type: 'selectComponents',
-        components: componentsFromFeatures(features)
+        components: componentsFromFeatures(features),
+        claudeMode: mode
     });
 }
 
@@ -843,6 +835,11 @@ function fitView() {
 // Load GDS data (receives GeoJSON from extension via postMessage)
 // ============================================================
 function loadGdsData(geojson, gdsPath, pythonFile, annotations, mode) {
+    // Preserve viewport on rebuild so user doesn't lose zoom/pan
+    var isReload = allFeatures.length > 0;
+    var prevCenter = isReload ? map.getView().getCenter() : null;
+    var prevZoom = isReload ? map.getView().getZoom() : null;
+
     currentGdsPath = gdsPath;
     currentPythonFile = pythonFile || '';
     currentFilePath = gdsPath;
@@ -853,17 +850,7 @@ function loadGdsData(geojson, gdsPath, pythonFile, annotations, mode) {
     allFeatures = [];
     layerColors = {};
 
-    var indicator = document.getElementById('mode-indicator');
-    if (mode === 'full') {
-        indicator.textContent = 'Provenance: ON';
-        indicator.className = '';
-    } else {
-        indicator.textContent = 'Provenance: OFF';
-        indicator.className = 'partial';
-    }
 
-    var fileName = gdsPath.split(/[/\\]/).pop();
-    document.getElementById('file-info').textContent = fileName;
 
     geojson.features.forEach(function(feature) {
         var props = feature.properties || {};
@@ -886,7 +873,12 @@ function loadGdsData(geojson, gdsPath, pythonFile, annotations, mode) {
         source.addFeature(f);
     });
 
-    if (allFeatures.length > 0) fitView();
+    if (allFeatures.length > 0 && isReload && prevCenter && prevZoom !== null) {
+        map.getView().setCenter(prevCenter);
+        map.getView().setZoom(prevZoom);
+    } else if (allFeatures.length > 0) {
+        fitView();
+    }
 
     (annotations || []).forEach(function(annotation) {
         drawSource.addFeature(featureFromSavedAnnotation(annotation));
@@ -898,6 +890,16 @@ function loadGdsData(geojson, gdsPath, pythonFile, annotations, mode) {
 
     clearInspect();
     buildLegend();
+
+    // Update provenance indicator (must be after buildLegend which recreates it)
+    var indicator = document.getElementById('mode-indicator');
+    if (mode === 'full') {
+        indicator.textContent = 'Provenance: ON';
+        indicator.className = '';
+    } else {
+        indicator.textContent = 'Provenance: OFF';
+        indicator.className = 'partial';
+    }
 
 }
 
@@ -996,7 +998,7 @@ function buildLegend() {
     var div = document.createElement('div');
     div.className = 'legend-section';
     div.style.marginTop = '12px';
-    div.innerHTML = '<h4 style="margin:0 0 6px 0;color:#89b4fa;">Layers</h4>';
+    div.innerHTML = '<div id="mode-indicator">Loading...</div><h4 style="margin:0 0 6px 0;color:#89b4fa;">Layers</h4>';
     keys.forEach(function(key) {
         var row = document.createElement('div');
         row.className = 'legend-row';
@@ -1415,14 +1417,6 @@ function rebuildScript() {
     btn.classList.add('running');
     document.getElementById('rebuild-overlay').classList.add('visible');
     vscode.postMessage({ type: 'rebuild' });
-}
-
-function openClaudeCode() {
-    vscode.postMessage({ type: 'openClaudeCode' });
-}
-
-function openCodex() {
-    vscode.postMessage({ type: 'openCodex' });
 }
 
 function onRebuildComplete() {
