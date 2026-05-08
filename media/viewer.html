@@ -477,10 +477,10 @@ function showMultiInspect(features) {
     addKV(panel, 'ref', branch);
     addKV(panel, 'path', currentFilePath);
 
-    updateMultiSourcePanel(fileMap);
+    updateMultiSourcePanel(fileMap, features);
 }
 
-function updateMultiSourcePanel(fileMap) {
+function updateMultiSourcePanel(fileMap, features) {
     var panel = document.getElementById('source-panel');
     panel.innerHTML = '';
 
@@ -490,28 +490,55 @@ function updateMultiSourcePanel(fileMap) {
         return;
     }
 
-    fileKeys.forEach(function(fp, fileIndex) {
-        var section = document.createElement('div');
-        section.className = 'file-section';
-        section.setAttribute('data-file', fp);
+    // Show numbered component list with full provenance, one line per source location
+    if (features && features.length > 0) {
+        features.forEach(function(f, idx) {
+            var prov = f.get('provenance') || {};
+            var compFile = prov.file ? prov.file.replace(/\\/g, '/') : '';
+            var compLine = prov.line ? parseInt(prov.line) : null;
 
-        var base = fp.split('/').pop();
-        var entries = fileMap[fp].sort(function(a,b){return a.line - b.line;});
+            if (!compFile) return;
 
-        var header = document.createElement('div');
-        header.className = 'file-section-header';
-        var lineNums = entries.map(function(e) { return e.line; });
-        header.innerHTML = '<span class="fname">' + esc(base) + '</span>'
-            + '<span class="lines">lines [' + lineNums.join(', ') + ']</span>';
+            // Build index label
+            var indexParts = [];
+            if (prov.loop_index && prov.loop_index.length > 0) {
+                indexParts.push('loop index [' + prov.loop_index.join(', ') + ']');
+            }
+            if (prov.array_index && prov.array_index.length > 0) {
+                indexParts.push('array index [' + prov.array_index.join(', ') + ']');
+            }
+            var indexLabel = indexParts.length > 0 ? ' (' + indexParts.join(', ') + ')' : '';
 
-        var body = document.createElement('div');
-        body.className = 'file-section-body open';
-        renderSourceLinks(fp, entries, body, fileIndex === 0);
+            // Primary line: Selected #N: path:line (index)
+            var primaryDiv = document.createElement('div');
+            primaryDiv.className = 'kv';
+            primaryDiv.innerHTML = '<span class="key">Selected #' + (idx + 1) + '</span><span class="val hl" style="cursor:pointer;">' + esc(compFile + ':' + compLine + indexLabel) + '</span>';
+            primaryDiv.querySelector('.val').addEventListener('click', function() {
+                vscode.postMessage({ type: 'requestSource', file: compFile, line: compLine });
+            });
+            panel.appendChild(primaryDiv);
 
-        section.appendChild(header);
-        section.appendChild(body);
-        panel.appendChild(section);
-    });
+            // Call chain: each entry on its own line with <- prefix
+            var chain = _normalizeCallChain(prov);
+            chain.forEach(function(cc) {
+                var cfp = (cc.file || '').replace(/\\/g, '/');
+                if (!cfp) return;
+                var chainLine = cc.line || '?';
+                var chainDiv = document.createElement('div');
+                chainDiv.className = 'kv';
+                chainDiv.innerHTML = '<span class="key" style="color:#585b70;">&nbsp;&nbsp;&larr;</span><span class="val" style="cursor:pointer;color:#6c7086;">' + esc(cfp + ':' + chainLine) + '</span>';
+                chainDiv.querySelector('.val').addEventListener('click', function() {
+                    vscode.postMessage({ type: 'requestSource', file: cfp, line: cc.line });
+                });
+                panel.appendChild(chainDiv);
+            });
+
+            // Separator between components
+            if (idx < features.length - 1) {
+                addSep(panel);
+            }
+        });
+    }
 }
 
 function renderSourceLinks(filePath, entries, container, primaryFile) {
@@ -1107,7 +1134,7 @@ function showInspect(feature) {
             var exists = fileMap[cfp].some(function(e) { return e.line === cc.line; });
             if (!exists) fileMap[cfp].push({ line: cc.line });
         });
-        updateMultiSourcePanel(fileMap);
+        updateMultiSourcePanel(fileMap, [feature]);
     } else {
         sp.innerHTML = '<p class="placeholder">No provenance data in this GDS file.<br><small style="color:#585b70;">Rebuild the GDS with the latest gdsfactory to enable source inspection.</small></p>';
     }
@@ -1220,7 +1247,7 @@ function showDrawnInspect(feature) {
         var fp = provenance.file.replace(/\\/g, '/');
         var fileMap = {};
         fileMap[fp] = [{ line: parseInt(provenance.line) || 1 }];
-        updateMultiSourcePanel(fileMap);
+        updateMultiSourcePanel(fileMap, [feature]);
     } else {
         document.getElementById('source-panel').innerHTML = '<p class="placeholder">Saving drawn annotation...</p>';
     }
@@ -1253,7 +1280,7 @@ function showDrawnMultiInspect(features) {
         }
     });
     if (Object.keys(fileMap).length > 0) {
-        updateMultiSourcePanel(fileMap);
+        updateMultiSourcePanel(fileMap, features);
     } else {
         document.getElementById('source-panel').innerHTML = '<p class="placeholder">Drawn shapes -- no source code</p>';
     }

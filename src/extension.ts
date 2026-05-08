@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { detectForkStatus, getForkStatus } from './forkDetector';
 import { findGdsOutput, getCurrentGdsPath, clearGdsState } from './gdsWatcher';
@@ -19,7 +20,6 @@ export async function rebuildAndReload(pythonFile: string): Promise<boolean> {
     if (!_context) return false;
 
     const panel = getOrCreatePanel(_context);
-    registerMessageHandlers(panel);
     setCurrentPythonFile(pythonFile);
 
     // Clear cached GDS path so we always re-discover after rebuild
@@ -57,6 +57,9 @@ export async function rebuildAndReload(pythonFile: string): Promise<boolean> {
         panel.webview.postMessage({ type: 'rebuildError', error: msg });
         return false;
     }
+
+    // Update tab title to show GDS file name
+    panel.title = path.basename(gdsPath);
 
     // 3. Parse and send to webview
     try {
@@ -102,7 +105,24 @@ export async function activate(context: vscode.ExtensionContext) {
             setCurrentPythonFile(pythonFile);
 
             const panel = getOrCreatePanel(context);
+            panel.reveal(vscode.ViewColumn.Beside);
             registerMessageHandlers(panel);
+
+            // Expand the viewer column to be wider than the editor column
+            // VS Code's "Even Editor Widths" distributes 50/50; calling it
+            // and then shifting focus to the editor group lets us bias the layout.
+            try {
+                // Focus the viewer group so resize applies to it
+                await vscode.commands.executeCommand('workbench.action.focusSecondEditorGroup');
+                // Increase the focused editor group width (repeated for effect)
+                for (let i = 0; i < 6; i++) {
+                    await vscode.commands.executeCommand('workbench.action.increaseEditorWidth');
+                }
+                // Move focus back to the editor
+                await vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+            } catch {
+                // Non-critical: column sizing commands may not exist in all VS Code versions
+            }
 
             const fs = require('fs');
             const htmlPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'viewer.html').fsPath;

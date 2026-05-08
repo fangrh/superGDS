@@ -173,10 +173,24 @@ async function injectViaSidebar(
 }
 
 async function injectClipboardOnly(
-    locations: SourceLocation[]
+    components: ComponentSelection[]
 ): Promise<void> {
-    const text = formatClaudeChatMentions(locations);
-    if (!text) return;
+    // Build per-component mention lines so each selected component appears
+    // in the clipboard, even if multiple components share the same file:line.
+    const lines: string[] = [];
+    for (const component of components) {
+        const locations = getSourceChain(component);
+        if (locations.length === 0) continue;
+        const primary = locations[0];
+        let mention = `@${toWorkspaceRelativePath(primary.file)}#L${primary.line}${formatSourceLocationIndexLabel(primary)}`;
+        for (let i = 1; i < locations.length; i++) {
+            mention += ` <- @${toWorkspaceRelativePath(locations[i].file)}:${locations[i].line}`;
+        }
+        lines.push(mention);
+    }
+
+    if (lines.length === 0) return;
+    const text = lines.join('\n');
 
     await vscode.env.clipboard.writeText(text);
     vscode.window.showInformationMessage('Claude mentions copied to clipboard');
@@ -210,7 +224,7 @@ async function syncClaudeContext(
     if (mode === 'off') return;
 
     if (mode === 'clipboard') {
-        await injectClipboardOnly(allLocations);
+        await injectClipboardOnly(components);
         return;
     }
 

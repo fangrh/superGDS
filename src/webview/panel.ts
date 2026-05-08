@@ -5,7 +5,6 @@ let _panel: vscode.WebviewPanel | null = null;
 
 export function getOrCreatePanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
     if (_panel) {
-        _panel.reveal(vscode.ViewColumn.Beside);
         return _panel;
     }
 
