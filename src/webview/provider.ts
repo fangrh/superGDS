@@ -93,6 +93,24 @@ export function registerMessageHandlers(
                     await rebuildAndReload(_currentPythonFile);
                     break;
                 }
+
+                case 'openClaudeCode': {
+                    try {
+                        await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', null, '');
+                    } catch {
+                        vscode.window.showInformationMessage('Claude Code extension not found. Install it from the marketplace.');
+                    }
+                    break;
+                }
+
+                case 'openCodex': {
+                    try {
+                        await vscode.commands.executeCommand('codex.open');
+                    } catch {
+                        vscode.window.showInformationMessage('Codex extension not found. Install it from the marketplace.');
+                    }
+                    break;
+                }
             }
         },
         undefined,
