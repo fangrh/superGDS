@@ -84,6 +84,9 @@ def _build_provenance_from_sidecar(entry, cell_name):
     source_text = entry.get("source_text")
     if source_text:
         prov["source_text"] = source_text
+    loop_index = entry.get("loop_index")
+    if loop_index:
+        prov["loop_index"] = loop_index
     return prov
 
 
