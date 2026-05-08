@@ -82,6 +82,17 @@ export function registerMessageHandlers(
                     }
                     break;
                 }
+
+                case 'rebuild': {
+                    if (!_currentPythonFile) {
+                        panel.webview.postMessage({ type: 'rebuildError', error: 'No Python file is active.' });
+                        break;
+                    }
+                    // Dynamic import to avoid circular dependency (extension.ts → provider.ts → extension.ts)
+                    const { rebuildAndReload } = await import('../extension');
+                    await rebuildAndReload(_currentPythonFile);
+                    break;
+                }
             }
         },
         undefined,
