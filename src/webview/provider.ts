@@ -11,6 +11,8 @@ import {
     type SourceLocation,
 } from './provenance';
 
+type ClaudeMode = 'auto' | 'clipboard' | 'off';
+
 export function registerMessageHandlers(
     panel: vscode.WebviewPanel
 ): vscode.Disposable {
@@ -20,7 +22,7 @@ export function registerMessageHandlers(
                 case 'selectComponents':
                     _currentSelection = message.components as ComponentSelection[];
                     highlightOpenSourceLocations(_currentSelection);
-                    await syncClaudeContext(_currentSelection);
+                    await syncClaudeContext(_currentSelection, message.claudeMode as ClaudeMode);
                     break;
 
                 case 'askClaude': {
@@ -94,23 +96,6 @@ export function registerMessageHandlers(
                     break;
                 }
 
-                case 'openClaudeCode': {
-                    try {
-                        await vscode.commands.executeCommand('claude-vscode.primaryEditor.open', null, '');
-                    } catch {
-                        vscode.window.showInformationMessage('Claude Code extension not found. Install it from the marketplace.');
-                    }
-                    break;
-                }
-
-                case 'openCodex': {
-                    try {
-                        await vscode.commands.executeCommand('codex.open');
-                    } catch {
-                        vscode.window.showInformationMessage('Codex extension not found. Install it from the marketplace.');
-                    }
-                    break;
-                }
             }
         },
         undefined,
@@ -187,6 +172,16 @@ async function injectViaSidebar(
     return true;
 }
 
+async function injectClipboardOnly(
+    locations: SourceLocation[]
+): Promise<void> {
+    const text = formatClaudeChatMentions(locations);
+    if (!text) return;
+
+    await vscode.env.clipboard.writeText(text);
+    vscode.window.showInformationMessage('Claude mentions copied to clipboard');
+}
+
 async function injectViaTerminal(
     terminal: vscode.Terminal,
     locations: SourceLocation[]
@@ -202,7 +197,8 @@ async function injectViaTerminal(
 }
 
 async function syncClaudeContext(
-    components: ComponentSelection[]
+    components: ComponentSelection[],
+    mode: ClaudeMode = 'auto'
 ): Promise<void> {
     if (components.length === 0) {
         return;
@@ -211,6 +207,14 @@ async function syncClaudeContext(
     const allLocations = getSelectionSourceLocations(components);
     if (allLocations.length === 0) return;
 
+    if (mode === 'off') return;
+
+    if (mode === 'clipboard') {
+        await injectClipboardOnly(allLocations);
+        return;
+    }
+
+    // mode === 'auto'
     const terminal = detectCliTerminal();
     if (terminal) {
         await injectViaTerminal(terminal, allLocations);
