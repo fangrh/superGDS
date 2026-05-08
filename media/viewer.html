@@ -876,10 +876,15 @@ function showInspect(feature) {
         addSep(d);
         if (provenance.instance_name) addKV(d, 'instance', provenance.instance_name, true);
         if (provenance.cell) addKV(d, 'cell', provenance.cell);
-        if (provenance.file) addKV(d, 'file', provenance.file + ':' + provenance.line);
+        if (provenance.file) {
+            var fileLabel = provenance.file + ':' + provenance.line;
+            if (provenance.loop_index && provenance.loop_index.length > 0) {
+                fileLabel += ' (loop index [' + provenance.loop_index.join(', ') + '])';
+            }
+            addKV(d, 'file', fileLabel);
+        }
         if (provenance.function && provenance.function !== '<module>') addKV(d, 'function', provenance.function + '()');
         if (provenance.class_name) addKV(d, 'class', provenance.class_name);
-        if (provenance.call_index) addKV(d, 'call_index', String(provenance.call_index));
         var chain = _normalizeCallChain(provenance);
         if (chain.length > 0) {
             addSep(d);
