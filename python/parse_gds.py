@@ -220,6 +220,24 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id):
     else:
         prov = dict(prov)
 
+    # Merge loop_index from the placement sidecar entry.
+    # The shape's own sidecar entry (from capture()) won't have loop_index,
+    # but the placement entry (from track_instance()) does. The link is
+    # instance_prov_id stored in the shape's property 1004 tag.
+    if "loop_index" not in prov and sidecar_by_id:
+        try:
+            placement_tag = _parse_json_property(
+                iterator.shape().property(PLACEMENT_PROP_KEY)
+            )
+            if placement_tag and "instance_prov_id" in placement_tag:
+                placement_entry = sidecar_by_id.get(
+                    placement_tag["instance_prov_id"]
+                )
+                if placement_entry and "loop_index" in placement_entry:
+                    prov["loop_index"] = placement_entry["loop_index"]
+        except Exception:
+            pass
+
     if instance_name:
         prov["instance_name"] = instance_name
     if cell_name and "cell" not in prov:
