@@ -10,6 +10,8 @@ interface ComponentProvenance {
     call_chain?: Array<{ file?: string; function?: string; line?: number | string }>;
     cell?: string;
     instance_name?: string;
+    variable_name?: string;
+    variable_in_loop?: boolean;
     layer?: string;
     bbox?: number[];
     area_um2?: number;
@@ -72,6 +74,17 @@ function buildPrompt(components: ComponentProvenance[], question: string): strin
                     lines.push(`  - ${cc.file}:${cc.line}${fn}`);
                 }
             });
+        }
+        if (prov.variable_name) {
+            lines.push(`- Variable: \`${prov.variable_name}\``);
+            if (prov.variable_in_loop) {
+                const plural = prov.variable_name + 's';
+                lines.push(`  - ⚠ loop variable — may be overwritten each iteration`);
+                lines.push(`  - 💡 store in array (e.g. \`${plural}[i] = ${prov.variable_name}\`) to reference by variable name`);
+            }
+            if (prov.array_index && prov.array_index.length > 0) {
+                lines.push(`  - ⚠ array element — variable name refers to the whole array, not this individual element`);
+            }
         }
         lines.push('');
     });
