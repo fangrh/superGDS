@@ -91,6 +91,13 @@ def _build_provenance_from_sidecar(entry, cell_name, ports_by_component=None):
     if loop_index:
         prov["loop_index"] = loop_index
 
+    variable_name = entry.get("variable_name")
+    if variable_name:
+        prov["variable_name"] = variable_name
+    variable_in_loop = entry.get("variable_in_loop")
+    if variable_in_loop:
+        prov["variable_in_loop"] = variable_in_loop
+
     # Attach ports for this component
     if ports_by_component:
         comp_name = entry.get("component", "")
