@@ -314,6 +314,9 @@ def _compute_array_element_index(iterator):
     contaminate the array-element displacement computation.
     """
     import klayout.db as _kdb
+    import sys as _sys
+
+    _DBG = True  # set True to enable stderr diagnostics
 
     try:
         path = iterator.path()
@@ -332,52 +335,96 @@ def _compute_array_element_index(iterator):
 
         inst = path[array_path_idx].inst()
         na, nb = inst.na, inst.nb
+        a, b = inst.a, inst.b
 
         # Compose parent transforms (everything above the array instance).
         parent = _kdb.Trans()
         for i in range(array_path_idx):
             parent = parent * path[i].inst().cell_inst.trans
+        parent_disp = parent.disp
 
-        # Base instance displacement (element [0,0] — no array offset).
-        base_disp = (parent * inst.cell_inst.trans).disp
+        # --- Gather all displacement sources for comparison ---
+        # Source A: iterator.itrans() — includes shape-local offsets
+        itrans_disp = iterator.itrans().disp
 
-        # Element-specific instance displacement via InstElement.cell_inst.
-        # This gives the exact cell-instance for THIS path position without
-        # any shape-local coordinate contamination.
-        elem_ci = getattr(path[array_path_idx], 'cell_inst', None)
-        if elem_ci is not None:
+        # Source B: inst.cell_inst.trans — the CellInstArray's cell_inst
+        inst_ci_trans = inst.cell_inst.trans
+        base_disp = (parent * inst_ci_trans).disp
+
+        # Source C: InstElement.cell_inst (if available) — element-specific
+        elem_ci_raw = getattr(path[array_path_idx], 'cell_inst', None)
+        has_elem_ci = elem_ci_raw is not None
+        elem_disp = base_disp  # fallback
+        if has_elem_ci:
             try:
-                # cell_inst may be a property or a callable depending on
-                # the KLayout Python binding version.
-                if callable(elem_ci):
-                    elem_ci_obj = elem_ci()
-                else:
-                    elem_ci_obj = elem_ci
+                elem_ci_obj = elem_ci_raw() if callable(elem_ci_raw) else elem_ci_raw
                 elem_disp = (parent * elem_ci_obj.trans).disp
             except Exception:
-                elem_disp = base_disp
-        else:
-            elem_disp = base_disp
+                pass
 
-        # Offset from element [0,0] in DBU (integer).
-        dx = elem_disp.x - base_disp.x
-        dy = elem_disp.y - base_disp.y
+        # Deltas using each source
+        delta_base = (itrans_disp.x - base_disp.x, itrans_disp.y - base_disp.y)
+        delta_elem = (itrans_disp.x - elem_disp.x, itrans_disp.y - elem_disp.y)
+        delta_inst = (elem_disp.x - base_disp.x, elem_disp.y - base_disp.y)
 
-        # Array vectors in DBU (Vector — integer coordinates).
-        a, b = inst.a, inst.b
-        ax, ay, bx, by = a.x, a.y, b.x, b.y
+        # Use inst-level delta for solving (no shape-local contamination).
+        dx, dy = delta_inst
+
+        if _DBG:
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX path_len={len(path)} arr_idx={array_path_idx}"
+                f" na={na} nb={nb}\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX a=({a.x},{a.y}) b=({b.x},{b.y})"
+                f" det={a.x * b.y - a.y * b.x}\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX parent_disp=({parent_disp.x},{parent_disp.y})\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX itrans_disp=({itrans_disp.x},{itrans_disp.y})\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX base_disp=({base_disp.x},{base_disp.y})"
+                f" inst_ci_trans=({inst_ci_trans.disp.x},{inst_ci_trans.disp.y})\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX has_elem_ci={has_elem_ci}"
+                f" elem_disp=({elem_disp.x},{elem_disp.y})\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX delta_base(itrans-base)=({delta_base[0]},{delta_base[1]})\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX delta_elem(itrans-elem)=({delta_elem[0]},{delta_elem[1]})\n"
+            )
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX delta_inst(elem-base)=({delta_inst[0]},{delta_inst[1]})\n"
+            )
 
         # Solve  col*a + row*b = [dx, dy]  via 2×2 Cramer's rule.
-        det = ax * by - ay * bx
+        det = a.x * b.y - a.y * b.x
         if det != 0:
-            col = round((dx * by - dy * bx) / det)
-            row = round((ax * dy - ay * dx) / det)
+            col = round((dx * b.y - dy * b.x) / det)
+            row = round((a.x * dy - a.y * dx) / det)
         else:
-            col = round(dx / ax) if ax != 0 else 0
-            row = round(dy / by) if by != 0 else 0
+            col = round(dx / a.x) if a.x != 0 else 0
+            row = round(dy / b.y) if b.y != 0 else 0
 
-        return [max(0, min(int(col), na - 1)), max(0, min(int(row), nb - 1))]
-    except Exception:
+        result = [max(0, min(int(col), na - 1)), max(0, min(int(row), nb - 1))]
+
+        if _DBG:
+            _sys.stderr.write(
+                f"[parse_gds] ARRAY_IDX dx={dx} dy={dy}"
+                f" col={col} row={row} result={result}\n"
+            )
+
+        return result
+    except Exception as e:
+        if _DBG:
+            import traceback as _tb
+            _sys.stderr.write(f"[parse_gds] ARRAY_IDX ERROR: {e}\n{_tb.format_exc()}\n")
         return None
 
 
