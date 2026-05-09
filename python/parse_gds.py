@@ -341,7 +341,6 @@ def _compute_array_element_index(iterator):
         parent = _kdb.Trans()
         for i in range(array_path_idx):
             parent = parent * path[i].inst().cell_inst.trans
-        parent_disp = parent.disp
 
         # InstElement.ia() / ib() give the exact per-element indices directly
         # for both 2D (na>1, nb>1) and 1D (na=1 or nb=1) arrays — no coordinate
@@ -353,8 +352,6 @@ def _compute_array_element_index(iterator):
         result = [max(0, min(int(col), na - 1)), max(0, min(int(row), nb - 1))]
 
         if _DBG and _DBG_LOG:
-            _DBG_LOG[-1]["dx"] = dx
-            _DBG_LOG[-1]["dy"] = dy
             _DBG_LOG[-1]["col"] = col
             _DBG_LOG[-1]["row"] = row
             _DBG_LOG[-1]["result"] = result
