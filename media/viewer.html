@@ -562,6 +562,33 @@ function updateMultiSourcePanel(fileMap, features) {
                 panel.appendChild(refDiv);
             }
 
+            // Variable name
+            var varName = prov.variable_name;
+            if (varName) {
+                var varDiv = document.createElement('div');
+                varDiv.className = 'kv';
+                varDiv.innerHTML = '<span class="key" style="color:#585b70;">&nbsp;&nbsp;Var</span><span class="val" style="color:#6c7086;">' + esc(varName) + '</span>';
+                panel.appendChild(varDiv);
+
+                if (prov.variable_in_loop) {
+                    var plural = varName + 's';
+                    var warnDiv = document.createElement('div');
+                    warnDiv.className = 'kv';
+                    warnDiv.innerHTML = '<span class="key" style="color:#f9e2af;">&nbsp;&nbsp;⚠</span><span class="val" style="color:#f9e2af;">loop variable — may be overwritten each iteration</span>';
+                    panel.appendChild(warnDiv);
+                    var tipDiv = document.createElement('div');
+                    tipDiv.className = 'kv';
+                    tipDiv.innerHTML = '<span class="key" style="color:#89b4fa;">&nbsp;&nbsp;💡</span><span class="val" style="color:#89b4fa;">store in array (e.g. ' + esc(plural) + '[i] = ' + esc(varName) + ') to reference by variable name</span>';
+                    panel.appendChild(tipDiv);
+                }
+                if (prov.array_index && prov.array_index.length > 0) {
+                    var arrWarnDiv = document.createElement('div');
+                    arrWarnDiv.className = 'kv';
+                    arrWarnDiv.innerHTML = '<span class="key" style="color:#f9e2af;">&nbsp;&nbsp;⚠</span><span class="val" style="color:#f9e2af;">array element — variable name refers to the whole array, not this individual element</span>';
+                    panel.appendChild(arrWarnDiv);
+                }
+            }
+
             // Separator between components
             if (idx < features.length - 1) {
                 addSep(panel);
