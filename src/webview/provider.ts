@@ -5,7 +5,6 @@ import { deleteAnnotation, saveAnnotation, type DrawnShapePayload } from '../ann
 import {
     getSourceChain,
     getSelectionSourceLocations,
-    formatMentions,
     formatSourceLocationIndexLabel,
     type ComponentSelection,
     type SourceLocation,
@@ -147,21 +146,22 @@ function detectCliTerminal(): vscode.Terminal | undefined {
 }
 
 async function injectViaSidebar(
-    locations: SourceLocation[]
+    components: ComponentSelection[]
 ): Promise<boolean> {
-    const text = formatClaudeChatMentions(locations);
+    const text = formatComponentMentions(components);
     if (!text) return false;
 
     await vscode.env.clipboard.writeText(text);
 
+    const allLocations = getSelectionSourceLocations(components);
     const editor = vscode.window.activeTextEditor;
     if (!editor) return false;
 
     const editorPath = normalizePath(editor.document.uri.fsPath);
-    const targetPath = normalizePath(resolveWorkspacePath(locations[0].file));
+    const targetPath = normalizePath(resolveWorkspacePath(allLocations[0].file));
     if (editorPath !== targetPath) return false;
 
-    const sameFileLocations = locations.filter(
+    const sameFileLocations = allLocations.filter(
         (loc) => normalizePath(resolveWorkspacePath(loc.file)) === editorPath
     );
     const range = locationsToSelectionRange(editor.document, sameFileLocations);
@@ -175,22 +175,8 @@ async function injectViaSidebar(
 async function injectClipboardOnly(
     components: ComponentSelection[]
 ): Promise<void> {
-    // Build per-component mention lines so each selected component appears
-    // in the clipboard, even if multiple components share the same file:line.
-    const lines: string[] = [];
-    for (const component of components) {
-        const locations = getSourceChain(component);
-        if (locations.length === 0) continue;
-        const primary = locations[0];
-        let mention = `@${toWorkspaceRelativePath(primary.file)}#L${primary.line}${formatSourceLocationIndexLabel(primary)}`;
-        for (let i = 1; i < locations.length; i++) {
-            mention += ` <- @${toWorkspaceRelativePath(locations[i].file)}:${locations[i].line}`;
-        }
-        lines.push(mention);
-    }
-
-    if (lines.length === 0) return;
-    const text = lines.join('\n');
+    const text = formatComponentMentions(components);
+    if (!text) return;
 
     await vscode.env.clipboard.writeText(text);
     vscode.window.showInformationMessage('Claude mentions copied to clipboard');
@@ -198,9 +184,9 @@ async function injectClipboardOnly(
 
 async function injectViaTerminal(
     terminal: vscode.Terminal,
-    locations: SourceLocation[]
+    components: ComponentSelection[]
 ): Promise<void> {
-    const text = formatMentions(locations, toWorkspaceRelativePath);
+    const text = formatComponentMentions(components);
     if (!text) return;
     terminal.show();
     await delay(50);
@@ -218,8 +204,8 @@ async function syncClaudeContext(
         return;
     }
 
-    const allLocations = getSelectionSourceLocations(components);
-    if (allLocations.length === 0) return;
+    // Verify at least one component has provenance
+    if (!components.some(c => getSourceChain(c).length > 0)) return;
 
     if (mode === 'off') return;
 
@@ -231,11 +217,11 @@ async function syncClaudeContext(
     // mode === 'auto'
     const terminal = detectCliTerminal();
     if (terminal) {
-        await injectViaTerminal(terminal, allLocations);
+        await injectViaTerminal(terminal, components);
         return;
     }
 
-    await injectViaSidebar(allLocations);
+    await injectViaSidebar(components);
 }
 
 async function openSourceFile(filePath: string, line?: number): Promise<void> {
@@ -289,10 +275,30 @@ function toWorkspaceRelativePath(filePath: string): string {
     return normalizePath(filePath);
 }
 
-function formatClaudeChatMentions(locations: SourceLocation[]): string {
-    return locations
-        .map((loc) => `@${toWorkspaceRelativePath(loc.file)}#L${loc.line}${formatSourceLocationIndexLabel(loc)}`)
-        .join(' ');
+function formatComponentMentions(components: ComponentSelection[]): string {
+    const lines: string[] = [];
+    for (let i = 0; i < components.length; i++) {
+        const locations = getSourceChain(components[i]);
+        if (locations.length === 0) continue;
+        const primary = locations[0];
+        const indexLabel = formatSourceLocationIndexLabel(primary);
+        lines.push(`Selected #${i + 1}: @${toWorkspaceRelativePath(primary.file)}#${primary.line}${indexLabel}`);
+        for (let j = 1; j < locations.length; j++) {
+            lines.push(`  ← @${toWorkspaceRelativePath(locations[j].file)}#${locations[j].line}`);
+        }
+        // Append port info if available
+        const ports = (components[i].provenance as any)?.ports;
+        if (Array.isArray(ports) && ports.length > 0) {
+            const portStr = ports.map((p: any) => {
+                const c = p.center;
+                const loc = c ? `(${Number(c[0]).toFixed(1)}, ${Number(c[1]).toFixed(1)})` : '';
+                const orient = p.orientation !== undefined ? ` ${p.orientation}°` : '';
+                return `${p.name}@${loc}${orient}`;
+            }).join(' | ');
+            lines.push(`  Ports: ${portStr}`);
+        }
+    }
+    return lines.join('\n');
 }
 
 function locationsToSelectionRange(
