@@ -80,7 +80,23 @@ export async function parseGdsFile(gdsPath: string): Promise<any> {
             throw new Error(result.stderr || 'GDS parse failed with unknown error');
         }
     }
-    return JSON.parse(result.stdout);
+    const data = JSON.parse(result.stdout);
+    // Surface array-index diagnostic info to the user.
+    if (data._diag) {
+        const d = data._diag;
+        if (d.array_calls === 0) {
+            vscode.window.showWarningMessage(
+                `[parse_gds diag v${d.ver}] No array instances processed by _compute_array_element_index. ` +
+                `DBG=${d.dbg_on}. Check if Python bytecode is stale (delete __pycache__/parse_gds.*.pyc).`
+            );
+        } else {
+            vscode.window.showInformationMessage(
+                `[parse_gds diag v${d.ver}] ${d.array_calls} array-index computation(s). ` +
+                `Check .array_debug.json next to the GDS file.`
+            );
+        }
+    }
+    return data;
 }
 
 /**

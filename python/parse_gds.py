@@ -474,11 +474,18 @@ def parse_gds(filepath: str) -> dict:
                 _json.dump(_DBG_LOG, _f, indent=2)
         except Exception:
             pass
-        _DBG_LOG.clear()
 
     result = {"type": "FeatureCollection", "features": features}
     if features:
         result["bbox"] = [min_x, min_y, max_x, max_y]
+    # Inject version marker + diagnostic summary so the viewer / TypeScript
+    # layer can confirm which code ran and whether array-index was ever called.
+    result["_diag"] = {
+        "ver": 4,
+        "dbg_on": _DBG,
+        "array_calls": len(_DBG_LOG),
+    }
+    _DBG_LOG.clear()
     return result
 
 
