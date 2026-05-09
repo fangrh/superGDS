@@ -286,6 +286,10 @@ function formatComponentMentions(components: ComponentSelection[]): string {
         for (let j = 1; j < locations.length; j++) {
             lines.push(`  ← @${toWorkspaceRelativePath(locations[j].file)}#${locations[j].line}`);
         }
+        const instanceName = components[i].provenance?.instance_name;
+        if (instanceName) {
+            lines.push(`  Ref: ${instanceName}`);
+        }
         const ports = components[i].provenance?.ports;
         if (ports && ports.length > 0) {
             const portStr = ports.map((p) => {
