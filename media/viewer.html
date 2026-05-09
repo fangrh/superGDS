@@ -271,17 +271,20 @@ function handleCtrlA() {
     var features = selectedFeatures.getArray();
 
     if (selectionCycle === 0) {
-        // L1: group by exact instance_name (same placed instance)
+        // L1: group by instance_name base (same array — strip _N suffix)
         if (features.length === 0) return;
         var anchor = features[0];
         var prov = anchor.get('provenance') || {};
         var anchorInst = prov.instance_name || '';
+        // Group base: strip the _N suffix to get array identity
+        var groupBase = anchorInst.replace(/_(\d+)$/, '');
 
-        var sameInstance = allFeatures.filter(function(f) {
+        var sameArray = allFeatures.filter(function(f) {
             var fProv = f.get('provenance') || {};
-            return (fProv.instance_name || '') === anchorInst;
+            var fInst = fProv.instance_name || '';
+            return fInst.replace(/_(\d+)$/, '') === groupBase;
         });
-        replaceSelection(sameInstance);
+        replaceSelection(sameArray);
         selectionCycle = 1;
         rewriteLabels('[:]');
         var cycleText = ['', 'L1: same instance  Ctrl+A→L2', 'L2: same add_ref  Ctrl+A→clear'];
