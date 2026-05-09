@@ -164,6 +164,8 @@ var currentPythonFile = '';
 var currentMode2 = 'partial';
 var selectedFeatures = new ol.Collection();
 var ctrlPressed = false;
+// Progressive selection cycle: 0=none, 1=array, 2=loop_index
+var selectionCycle = 0;
 var activeTab = 'source';
 var allFeatures = [];
 var layerColors = {};
@@ -214,6 +216,10 @@ document.addEventListener('keydown', function(e) {
     if (e.key === '4') setMode('line');
     if (e.key === '5') setMode('polygon');
     if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) toggleSnap();
+    if ((e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleCtrlA();
+    }
 });
 document.addEventListener('keyup', function(e) {
     if (e.key === 'Control' || e.key === 'Meta') ctrlPressed = false;
@@ -253,6 +259,87 @@ function clearSelection() {
     vectorLayer.changed();
     drawLayer.changed();
     onSelectionChanged();
+}
+
+// Progressive Ctrl+A selection:
+//   0 → 1: select all features sharing the same instance_name base (same array)
+//   1 → 2: select all features sharing the same loop_index
+//   2 → 0: clear selection
+function handleCtrlA() {
+    var features = selectedFeatures.getArray();
+
+    if (selectionCycle === 0) {
+        // Start cycle: use currently selected feature as anchor
+        if (features.length === 0) return;
+        var anchor = features[0];
+        var prov = anchor.get('provenance') || {};
+        var instanceName = prov.instance_name || '';
+        // Group base: strip the _N suffix to get array identity
+        var groupBase = instanceName.replace(/_(\d+)$/, '');
+
+        // Find all features in the same array (same group base)
+        var sameArray = allFeatures.filter(function(f) {
+            var fProv = f.get('provenance') || {};
+            var fInst = fProv.instance_name || '';
+            return fInst.replace(/_(\d+)$/, '') === groupBase;
+        });
+        replaceSelection(sameArray);
+        selectionCycle = 1;
+        rewriteLabels('[:]');
+
+    } else if (selectionCycle === 1) {
+        // Layer 2: group by loop_index
+        var anchor = selectedFeatures.getArray()[0];
+        var prov = anchor ? anchor.get('provenance') || {} : {};
+        var loopIdx = prov.loop_index;
+
+        var sameLoop = allFeatures.filter(function(f) {
+            var fProv = f.get('provenance') || {};
+            var fLoop = fProv.loop_index;
+            // Compare loop_index arrays
+            if (!fLoop && !loopIdx) return true;
+            if (!fLoop || !loopIdx) return false;
+            if (fLoop.length !== loopIdx.length) return false;
+            return fLoop.every(function(v, i) { return v === loopIdx[i]; });
+        });
+        replaceSelection(sameLoop);
+        selectionCycle = 2;
+        rewriteLabels('[:]');
+
+    } else {
+        // Cycle complete: clear and reset
+        clearSelection();
+        selectionCycle = 0;
+    }
+}
+
+// Rewrite array_index/loop_index labels on selected features to a given display string.
+// Only one label per unique instance_name base is shown.
+function rewriteLabels(label) {
+    var shown = {};
+    selectedFeatures.forEach(function(f) {
+        var prov = f.get('provenance') || {};
+        var instName = prov.instance_name || '';
+        var groupKey = instName.replace(/_(\d+)$/, '');
+
+        if (label === '[:]') {
+            // For grouped selection, show label only on first element per array
+            if (!shown[groupKey]) {
+                f.set('label', '[:]');
+                shown[groupKey] = true;
+            } else {
+                f.set('label', '');
+            }
+        } else {
+            // Restore original label
+            var arrIdx = prov.array_index;
+            if (arrIdx && arrIdx.length > 0) {
+                f.set('label', '[' + arrIdx.join(', ') + ']');
+            } else {
+                f.set('label', '');
+            }
+        }
+    });
 }
 
 // ============================================================
@@ -687,6 +774,10 @@ selectClick.on('select', function(e) {
     }
 
     selectClick.getFeatures().clear();
+    if (!ctrlPressed) {
+        // Normal single selection: reset cycle
+        selectionCycle = 0;
+    }
     vectorLayer.changed();
     drawLayer.changed();
     onSelectionChanged();
