@@ -40,8 +40,12 @@ export function getSourceChain(component: ComponentSelection): SourceLocation[] 
         array_index: provenance.array_index,
     });
 
+    const primaryFile = normalizeFile(provenance.file);
+    const primaryLine = normalizeLine(provenance.line);
+
     if (Array.isArray(provenance.call_chain)) {
         for (const frame of provenance.call_chain) {
+            if (normalizeFile(frame.file) === primaryFile && normalizeLine(frame.line) === primaryLine) continue;
             addLocation(locations, {
                 file: frame.file,
                 line: frame.line,
@@ -53,6 +57,7 @@ export function getSourceChain(component: ComponentSelection): SourceLocation[] 
     if (Array.isArray(provenance.call_stack)) {
         for (const frame of provenance.call_stack) {
             const parsed = parseCallStackFrame(frame);
+            if (normalizeFile(parsed.file) === primaryFile && normalizeLine(parsed.line) === primaryLine) continue;
             addLocation(locations, parsed);
         }
     }
