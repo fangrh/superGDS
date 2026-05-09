@@ -267,3 +267,46 @@ test('drawn annotation provenance is formatted for Claude source context', () =>
     assert.match(output, /drawn rectangle/);
     assert.match(output, /\/repo\/chip_rectangle_1\.json:1 \(drawn annotation\)/);
 });
+
+test('selection output includes variable name', () => {
+    const components: ComponentSelection[] = [
+        {
+            provId: 'c1',
+            layer: '1/0',
+            bbox: [],
+            provenance: {
+                cell: 'electrode',
+                instance_name: 'Via1_Horizontal',
+                file: 'design.py',
+                line: 15,
+                variable_name: 'electrode',
+            },
+        },
+    ];
+
+    const output = formatSelectionForOutput(components);
+    assert.match(output, /electrode/);
+});
+
+test('selection output includes variable in loop warning', () => {
+    const components: ComponentSelection[] = [
+        {
+            provId: 'c1',
+            layer: '1/0',
+            bbox: [],
+            provenance: {
+                cell: 'hole',
+                instance_name: 'hole_3',
+                file: 'design.py',
+                line: 20,
+                loop_index: [3],
+                variable_name: 'hole',
+                variable_in_loop: true,
+            },
+        },
+    ];
+
+    const output = formatSelectionForOutput(components);
+    assert.match(output, /hole_3/);
+    assert.match(output, /loop index \[3\]/);
+});
