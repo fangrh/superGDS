@@ -20,24 +20,23 @@ PROV_ID_PROP_KEY = 1002
 def _load_sidecar(gds_path):
     """Load provenance sidecar JSON for a GDS file.
 
-    Looks for ``<gds_path_without_suffix>.provenance.json`` and returns
-    a dict mapping prov_id (int) to the corresponding entry dict.
-    Returns an empty dict if the sidecar file does not exist or cannot
-    be parsed.
+    Returns a tuple of (entries_by_id, ports_by_component).
     """
     import re
 
     base = re.sub(r"\.gds$", "", gds_path, flags=re.IGNORECASE)
     sidecar_path = base + ".provenance.json"
     if not os.path.exists(sidecar_path):
-        return {}
+        return {}, {}
     try:
         with open(sidecar_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         entries = data.get("entries", [])
-        return {entry["id"]: entry for entry in entries if "id" in entry}
+        entries_by_id = {entry["id"]: entry for entry in entries if "id" in entry}
+        ports_by_component = data.get("ports", {})
+        return entries_by_id, ports_by_component
     except Exception:
-        return {}
+        return {}, {}
 
 
 def _parse_call_stack_string(frame_str):
@@ -55,11 +54,11 @@ def _parse_call_stack_string(frame_str):
     return {"file": m.group(1), "line": int(m.group(2)), "function": m.group(3)}
 
 
-def _build_provenance_from_sidecar(entry, cell_name):
+def _build_provenance_from_sidecar(entry, cell_name, ports_by_component=None):
     """Build a provenance dict from a sidecar entry and cell name.
 
     Returns a dict with keys: file, line, function, call_chain, cell,
-    and optionally source_text.
+    and optionally source_text and ports.
     """
     primary_file = entry["file"]
     primary_dir = os.path.dirname(primary_file) if primary_file else ""
@@ -87,6 +86,15 @@ def _build_provenance_from_sidecar(entry, cell_name):
     loop_index = entry.get("loop_index")
     if loop_index:
         prov["loop_index"] = loop_index
+
+    # Attach ports for this component
+    if ports_by_component:
+        comp_name = entry.get("component", "")
+        cell = cell_name or comp_name
+        ports = ports_by_component.get(comp_name) or ports_by_component.get(cell)
+        if ports:
+            prov["ports"] = ports
+
     return prov
 
 
@@ -171,7 +179,7 @@ def _get_instance_name(iterator):
         return None
 
 
-def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id):
+def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id, ports_by_component=None):
     prov = None
     instance_name = _get_instance_name(iterator)
 
@@ -188,7 +196,7 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id):
                 prov_id = int(prov_id_raw)
                 entry = sidecar_by_id.get(prov_id)
                 if entry is not None:
-                    prov = _build_provenance_from_sidecar(entry, cell_name)
+                    prov = _build_provenance_from_sidecar(entry, cell_name, ports_by_component)
         except Exception:
             prov = None
 
@@ -321,7 +329,7 @@ def parse_gds(filepath: str) -> dict:
     layout.read(filepath)
 
     provenance_by_cell = _extract_provenance(layout)
-    sidecar_by_id = _load_sidecar(filepath)
+    sidecar_by_id, ports_by_component = _load_sidecar(filepath)
 
     top = layout.top_cell()
     if top is None:
@@ -346,7 +354,7 @@ def parse_gds(filepath: str) -> dict:
                     "color": color,
                     **_polygon_metadata(ring),
                 }
-                provenance = _get_feature_provenance(it, provenance_by_cell, sidecar_by_id)
+                provenance = _get_feature_provenance(it, provenance_by_cell, sidecar_by_id, ports_by_component)
                 if provenance:
                     array_idx = _compute_array_element_index(it)
                     if array_idx is not None:
