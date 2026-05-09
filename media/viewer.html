@@ -251,6 +251,8 @@ function replaceSelection(features) {
         selectedFeatures.push(f);
         f.set('selected', true);
     });
+    vectorLayer.changed();
+    drawLayer.changed();
 }
 
 function clearSelection() {
@@ -286,6 +288,9 @@ function handleCtrlA() {
         replaceSelection(sameArray);
         selectionCycle = 1;
         rewriteLabels('[:]');
+        var cycleText = ['', 'L1: same array  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
+        var cycleEl = document.getElementById('cycle-indicator');
+        if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
     } else if (selectionCycle === 1) {
         // Layer 2: group by loop_index
@@ -305,11 +310,16 @@ function handleCtrlA() {
         replaceSelection(sameLoop);
         selectionCycle = 2;
         rewriteLabels('[:]');
+        var cycleText = ['', 'L1: same array  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
+        var cycleEl = document.getElementById('cycle-indicator');
+        if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
     } else {
         // Cycle complete: clear and reset
         clearSelection();
         selectionCycle = 0;
+        var cycleEl = document.getElementById('cycle-indicator');
+        if (cycleEl) { cycleEl.textContent = ''; cycleEl.style.display = 'none'; }
     }
 }
 
@@ -729,10 +739,20 @@ var vectorLayer = new ol.layer.Vector({
         var color = feature.get('color') || '#fff';
         var visible = feature.get('visible') !== false;
         if (!visible) return new ol.style.Style({});
-        return new ol.style.Style({
+        var style = new ol.style.Style({
             stroke: new ol.style.Stroke({ color: color, width: 1 }),
             fill: new ol.style.Fill({ color: color + '80' })
         });
+        var labelText = feature.get('label');
+        if (labelText) {
+            style.setText(new ol.style.Text({
+                text: labelText,
+                font: '10px monospace',
+                fill: new ol.style.Fill({ color: '#f9e2af' }),
+                stroke: new ol.style.Stroke({ color: '#1a1a2e', width: 2 })
+            }));
+        }
+        return style;
     }
 });
 
@@ -777,6 +797,8 @@ selectClick.on('select', function(e) {
     if (!ctrlPressed) {
         // Normal single selection: reset cycle
         selectionCycle = 0;
+        var cycleEl = document.getElementById('cycle-indicator');
+        if (cycleEl) { cycleEl.textContent = ''; cycleEl.style.display = 'none'; }
     }
     vectorLayer.changed();
     drawLayer.changed();
@@ -1188,7 +1210,7 @@ function buildLegend() {
     var div = document.createElement('div');
     div.className = 'legend-section';
     div.style.marginTop = '12px';
-    div.innerHTML = '<div id="mode-indicator">Loading...</div><h4 style="margin:0 0 6px 0;color:#89b4fa;">Layers</h4>';
+    div.innerHTML = '<div id="mode-indicator">Loading...</div><div id="cycle-indicator" class="mode-indicator partial" style="display:none; margin-top: 4px;"></div><h4 style="margin:0 0 6px 0;color:#89b4fa;">Layers</h4>';
     keys.forEach(function(key) {
         var row = document.createElement('div');
         row.className = 'legend-row';
