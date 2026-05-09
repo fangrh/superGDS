@@ -8,7 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/ol@10/dist/ol.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { display: flex; height: 100vh; background: #1a1a2e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+html, body { height: 100%; }
+body { display: flex; background: #1a1a2e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
 #sidebar { width: 120px; background: #1e1e2e; color: #cdd6f4; overflow-y: auto; padding: 8px; flex-shrink: 0; }
 #sidebar h4 { margin: 0 0 8px 0; color: #89b4fa; font-size: 13px; }
 #sidebar button { width: 100%; margin-bottom: 8px; padding: 6px 10px; background: #45475a; color: #cdd6f4; border: 1px solid #585b70; border-radius: 4px; cursor: pointer; font-size: 12px; }
@@ -472,6 +473,25 @@ function showMultiInspect(features) {
         });
     }
 
+    // Collect unique port sets by component
+    var seenPortComps = {};
+    features.forEach(function(f) {
+        var prov = f.get('provenance') || {};
+        var portStr = formatPorts(prov);
+        var compName = prov.cell || prov.instance_name || '';
+        if (portStr && !seenPortComps[compName]) {
+            seenPortComps[compName] = portStr;
+        }
+    });
+    var portCompNames = Object.keys(seenPortComps);
+    if (portCompNames.length > 0) {
+        addSep(panel);
+        addKV(panel, 'ports', '');
+        portCompNames.forEach(function(compName) {
+            addKV(panel, compName, seenPortComps[compName]);
+        });
+    }
+
     addSep(panel);
     addKV(panel, 'repo', repo);
     addKV(panel, 'ref', branch);
@@ -512,7 +532,7 @@ function updateMultiSourcePanel(fileMap, features) {
             // Primary line: Selected #N: path:line (index)
             var primaryDiv = document.createElement('div');
             primaryDiv.className = 'kv';
-            primaryDiv.innerHTML = '<span class="key">Selected #' + (idx + 1) + '</span><span class="val hl" style="cursor:pointer;">' + esc(compFile + ':' + compLine + indexLabel) + '</span>';
+            primaryDiv.innerHTML = '<span class="key">Selected #' + (idx + 1) + '</span><span class="val hl" style="cursor:pointer;">@' + esc(compFile + '#' + compLine + indexLabel) + '</span>';
             primaryDiv.querySelector('.val').addEventListener('click', function() {
                 vscode.postMessage({ type: 'requestSource', file: compFile, line: compLine });
             });
@@ -526,7 +546,7 @@ function updateMultiSourcePanel(fileMap, features) {
                 var chainLine = cc.line || '?';
                 var chainDiv = document.createElement('div');
                 chainDiv.className = 'kv';
-                chainDiv.innerHTML = '<span class="key" style="color:#585b70;">&nbsp;&nbsp;&larr;</span><span class="val" style="cursor:pointer;color:#6c7086;">' + esc(cfp + ':' + chainLine) + '</span>';
+                chainDiv.innerHTML = '<span class="key" style="color:#585b70;">&nbsp;&nbsp;&larr;</span><span class="val" style="cursor:pointer;color:#6c7086;">@' + esc(cfp + '#' + chainLine) + '</span>';
                 chainDiv.querySelector('.val').addEventListener('click', function() {
                     vscode.postMessage({ type: 'requestSource', file: cfp, line: cc.line });
                 });
@@ -900,11 +920,27 @@ function loadGdsData(geojson, gdsPath, pythonFile, annotations, mode) {
         source.addFeature(f);
     });
 
+    // Recalculate map size before fitting — the map may have been
+    // created before the webview container had its final dimensions.
+    map.updateSize();
+
     if (allFeatures.length > 0 && isReload && prevCenter && prevZoom !== null) {
         map.getView().setCenter(prevCenter);
         map.getView().setZoom(prevZoom);
     } else if (allFeatures.length > 0) {
-        fitView();
+        var sz = map.getSize();
+        if (sz && sz[0] >= 10 && sz[1] >= 10) {
+            fitView();
+        } else {
+            _pendingFit = true;
+        }
+        // OpenLayers may not render features added while the canvas had
+        // zero dimensions (common when the webview panel first appears).
+        // Re-fit after the browser has painted the canvas.
+        setTimeout(function() {
+            map.updateSize();
+            fitView();
+        }, 200);
     }
 
     (annotations || []).forEach(function(annotation) {
@@ -1042,24 +1078,49 @@ function buildLegend() {
 }
 
 // ============================================================
+// Port formatting
+// ============================================================
+function formatPorts(prov) {
+    var ports = prov.ports;
+    if (!ports || !ports.length) return '';
+    return ports.map(function(p) {
+        var c = p.center;
+        var loc = c ? '(' + c[0].toFixed(1) + ', ' + c[1].toFixed(1) + ')' : '';
+        var orient = p.orientation !== undefined ? ' ' + p.orientation + '°' : '';
+        return p.name + '@' + loc + orient;
+    }).join(' | ');
+}
+
+// ============================================================
 // Call chain helpers
 // ============================================================
 function _normalizeCallChain(prov) {
+    var entries;
     // Handle call_chain (from provenance_inject.py): array of {file, function, line}
     if (prov.call_chain && Array.isArray(prov.call_chain)) {
-        return prov.call_chain.map(function(cc) {
+        entries = prov.call_chain.map(function(cc) {
             return { file: cc.file || '', function: cc.function || '', line: parseInt(cc.line) || 0 };
         });
-    }
-    // Handle call_stack (from provenance.py): array of "file:line in function"
-    if (prov.call_stack && Array.isArray(prov.call_stack)) {
-        return prov.call_stack.map(function(cs) {
+    } else if (prov.call_stack && Array.isArray(prov.call_stack)) {
+        // Handle call_stack (from provenance.py): array of "file:line in function"
+        entries = prov.call_stack.map(function(cs) {
             var m = cs.match(/^(.+?):(\d+)\s+in\s+(.+)$/);
             if (m) return { file: m[1], line: parseInt(m[2]), function: m[3] };
             return { file: cs, line: 0, function: '' };
         });
+    } else {
+        return [];
     }
-    return [];
+    // Skip entries that duplicate the primary file:line
+    var primaryFile = (prov.file || '').replace(/\\/g, '/');
+    var primaryLine = parseInt(prov.line) || 0;
+    if (primaryFile && primaryLine) {
+        entries = entries.filter(function(e) {
+            var ef = (e.file || '').replace(/\\/g, '/');
+            return ef !== primaryFile || e.line !== primaryLine;
+        });
+    }
+    return entries;
 }
 
 // ============================================================
@@ -1101,11 +1162,17 @@ function showInspect(feature) {
             addSep(d);
             addKV(d, 'call chain', '');
             chain.forEach(function(cc) {
-                var loc = (cc.file || '') + ':' + (cc.line || '?');
+                var loc = '@' + (cc.file || '') + '#' + (cc.line || '?');
                 var fn = cc.function ? ' <- ' + cc.function + '()' : '';
                 addKV(d, '', loc + fn);
             });
         }
+    }
+
+    var portStr = formatPorts(provenance);
+    if (portStr) {
+        addSep(d);
+        addKV(d, 'ports', portStr);
     }
 
     addSep(d);
@@ -1367,7 +1434,7 @@ function copyYAML(e) {
             if (chain.length > 0) {
                 lines.push('  call_chain:');
                 chain.forEach(function(cc) {
-                    var loc = (cc.file || '') + ':' + (cc.line || '?');
+                    var loc = '@' + (cc.file || '') + '#' + (cc.line || '?');
                     var fn = cc.function ? ' (' + cc.function + ')' : '';
                     var key = loc + fn;
                     if (!seenCallChain[key]) {
@@ -1487,6 +1554,25 @@ window.addEventListener('message', function(event) {
             break;
     }
 });
+
+// ============================================================
+// Keep OpenLayers canvas sized to its container
+// ============================================================
+var _pendingFit = false;
+new ResizeObserver(function() {
+    var prevSize = map.getSize();
+    map.updateSize();
+    var newSize = map.getSize();
+    // If map went from zero/near-zero to a real size, fit the view to data
+    var wasTiny = !prevSize || prevSize[0] < 10 || prevSize[1] < 10;
+    var nowBig = newSize && newSize[0] >= 10 && newSize[1] >= 10;
+    if ((wasTiny && nowBig) || _pendingFit) {
+        _pendingFit = false;
+        if (allFeatures.length > 0) {
+            fitView();
+        }
+    }
+}).observe(document.getElementById('map'));
 
 // ============================================================
 // Signal ready to extension
