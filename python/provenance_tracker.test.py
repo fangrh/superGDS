@@ -79,6 +79,63 @@ class ProvenanceTrackerTests(unittest.TestCase):
 
         self.assertEqual(helper(), [7])
 
+    def test_variable_name_extracted_from_assignment(self):
+        provenance = load_provenance_module()
+        provenance._reset_global_id()
+        provenance._find_user_frame = lambda: {
+            "file": "design.py",
+            "line": 15,
+            "function": "build",
+            "source_text": "electrode = c.insts['Via1']",
+            "call_stack": [],
+            "variable_name": "electrode",
+        }
+
+        tracker = provenance.ProvenanceTracker()
+        tracker.track_instance("top", "cell", "top/cell_1", "r0 *1 0,0")
+
+        [entry] = tracker.get_sidecar()["entries"]
+        self.assertEqual(entry["variable_name"], "electrode")
+        self.assertNotIn("variable_in_loop", entry)
+
+    def test_variable_in_loop_flagged(self):
+        provenance = load_provenance_module()
+        provenance._reset_global_id()
+        provenance._find_user_frame = lambda: {
+            "file": "design.py",
+            "line": 15,
+            "function": "build",
+            "source_text": "hole = gf.Component(h['name'])",
+            "call_stack": [],
+            "loop_index": [3],
+            "variable_name": "hole",
+            "variable_in_loop": True,
+        }
+
+        tracker = provenance.ProvenanceTracker()
+        tracker.track_instance("top", "cell", "top/cell_1", "r0 *1 0,0")
+
+        [entry] = tracker.get_sidecar()["entries"]
+        self.assertEqual(entry["variable_name"], "hole")
+        self.assertTrue(entry["variable_in_loop"])
+
+    def test_no_variable_name_without_assignment(self):
+        provenance = load_provenance_module()
+        provenance._reset_global_id()
+        provenance._find_user_frame = lambda: {
+            "file": "design.py",
+            "line": 15,
+            "function": "build",
+            "source_text": "comp << hole",
+            "call_stack": [],
+        }
+
+        tracker = provenance.ProvenanceTracker()
+        tracker.track_instance("top", "cell", "top/cell_1", "r0 *1 0,0")
+
+        [entry] = tracker.get_sidecar()["entries"]
+        self.assertNotIn("variable_name", entry)
+
 
 if __name__ == "__main__":
     unittest.main()
