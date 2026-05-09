@@ -264,53 +264,45 @@ function clearSelection() {
 }
 
 // Progressive Ctrl+A selection:
-//   0 → 1: select all features sharing the same instance_name base (same array)
-//   1 → 2: select all features sharing the same loop_index
+//   0 → 1: select all features sharing the same instance_name (same placed instance)
+//   1 → 2: select all features from the same source line (same add_ref statement)
 //   2 → 0: clear selection
 function handleCtrlA() {
     var features = selectedFeatures.getArray();
 
     if (selectionCycle === 0) {
-        // Start cycle: use currently selected feature as anchor
+        // L1: group by exact instance_name (same placed instance)
         if (features.length === 0) return;
         var anchor = features[0];
         var prov = anchor.get('provenance') || {};
-        var instanceName = prov.instance_name || '';
-        // Group base: strip the _N suffix to get array identity
-        var groupBase = instanceName.replace(/_(\d+)$/, '');
+        var anchorInst = prov.instance_name || '';
 
-        // Find all features in the same array (same group base)
-        var sameArray = allFeatures.filter(function(f) {
+        var sameInstance = allFeatures.filter(function(f) {
             var fProv = f.get('provenance') || {};
-            var fInst = fProv.instance_name || '';
-            return fInst.replace(/_(\d+)$/, '') === groupBase;
+            return (fProv.instance_name || '') === anchorInst;
         });
-        replaceSelection(sameArray);
+        replaceSelection(sameInstance);
         selectionCycle = 1;
         rewriteLabels('[:]');
-        var cycleText = ['', 'L1: same array  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
+        var cycleText = ['', 'L1: same instance  Ctrl+A→L2', 'L2: same add_ref  Ctrl+A→clear'];
         var cycleEl = document.getElementById('cycle-indicator');
         if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
     } else if (selectionCycle === 1) {
-        // Layer 2: group by loop_index
+        // L2: group by file + line (same add_ref statement in source)
         var anchor = selectedFeatures.getArray()[0];
         var prov = anchor ? anchor.get('provenance') || {} : {};
-        var loopIdx = prov.loop_index;
+        var anchorFile = prov.file || '';
+        var anchorLine = String(prov.line || '');
 
-        var sameLoop = allFeatures.filter(function(f) {
+        var sameSource = allFeatures.filter(function(f) {
             var fProv = f.get('provenance') || {};
-            var fLoop = fProv.loop_index;
-            // Compare loop_index arrays
-            if (!fLoop && !loopIdx) return true;
-            if (!fLoop || !loopIdx) return false;
-            if (fLoop.length !== loopIdx.length) return false;
-            return fLoop.every(function(v, i) { return v === loopIdx[i]; });
+            return (fProv.file || '') === anchorFile && String(fProv.line || '') === anchorLine;
         });
-        replaceSelection(sameLoop);
+        replaceSelection(sameSource);
         selectionCycle = 2;
         rewriteLabels('[:]');
-        var cycleText = ['', 'L1: same array  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
+        var cycleText = ['', 'L1: same instance  Ctrl+A→L2', 'L2: same add_ref  Ctrl+A→clear'];
         var cycleEl = document.getElementById('cycle-indicator');
         if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
