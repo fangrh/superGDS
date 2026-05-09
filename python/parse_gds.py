@@ -3,6 +3,9 @@ import json
 import sys
 import os
 
+_DBG = True  # set to True to log array-index diagnostics
+_DBG_LOG: list = []
+
 
 LAYER_COLORS = [
     "#4ecdc4", "#ff6b6b", "#45b7d1", "#96ceb4",
@@ -314,9 +317,6 @@ def _compute_array_element_index(iterator):
     contaminate the array-element displacement computation.
     """
     import klayout.db as _kdb
-    import sys as _sys
-
-    _DBG = True  # set True to enable stderr diagnostics
 
     try:
         path = iterator.path()
@@ -371,37 +371,22 @@ def _compute_array_element_index(iterator):
         dx, dy = delta_inst
 
         if _DBG:
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX path_len={len(path)} arr_idx={array_path_idx}"
-                f" na={na} nb={nb}\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX a=({a.x},{a.y}) b=({b.x},{b.y})"
-                f" det={a.x * b.y - a.y * b.x}\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX parent_disp=({parent_disp.x},{parent_disp.y})\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX itrans_disp=({itrans_disp.x},{itrans_disp.y})\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX base_disp=({base_disp.x},{base_disp.y})"
-                f" inst_ci_trans=({inst_ci_trans.disp.x},{inst_ci_trans.disp.y})\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX has_elem_ci={has_elem_ci}"
-                f" elem_disp=({elem_disp.x},{elem_disp.y})\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX delta_base(itrans-base)=({delta_base[0]},{delta_base[1]})\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX delta_elem(itrans-elem)=({delta_elem[0]},{delta_elem[1]})\n"
-            )
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX delta_inst(elem-base)=({delta_inst[0]},{delta_inst[1]})\n"
-            )
+            _DBG_LOG.append({
+                "path_len": len(path),
+                "arr_idx": array_path_idx,
+                "na": na, "nb": nb,
+                "a": [a.x, a.y], "b": [b.x, b.y],
+                "det": a.x * b.y - a.y * b.x,
+                "parent_disp": [parent_disp.x, parent_disp.y],
+                "itrans_disp": [itrans_disp.x, itrans_disp.y],
+                "base_disp": [base_disp.x, base_disp.y],
+                "inst_ci_disp": [inst_ci_trans.disp.x, inst_ci_trans.disp.y],
+                "has_elem_ci": has_elem_ci,
+                "elem_disp": [elem_disp.x, elem_disp.y],
+                "delta_base": list(delta_base),
+                "delta_elem": list(delta_elem),
+                "delta_inst": list(delta_inst),
+            })
 
         # Solve  col*a + row*b = [dx, dy]  via 2×2 Cramer's rule.
         det = a.x * b.y - a.y * b.x
@@ -414,17 +399,18 @@ def _compute_array_element_index(iterator):
 
         result = [max(0, min(int(col), na - 1)), max(0, min(int(row), nb - 1))]
 
-        if _DBG:
-            _sys.stderr.write(
-                f"[parse_gds] ARRAY_IDX dx={dx} dy={dy}"
-                f" col={col} row={row} result={result}\n"
-            )
+        if _DBG and _DBG_LOG:
+            _DBG_LOG[-1]["dx"] = dx
+            _DBG_LOG[-1]["dy"] = dy
+            _DBG_LOG[-1]["col"] = col
+            _DBG_LOG[-1]["row"] = row
+            _DBG_LOG[-1]["result"] = result
 
         return result
     except Exception as e:
         if _DBG:
             import traceback as _tb
-            _sys.stderr.write(f"[parse_gds] ARRAY_IDX ERROR: {e}\n{_tb.format_exc()}\n")
+            _DBG_LOG.append({"error": str(e), "traceback": _tb.format_exc()})
         return None
 
 
@@ -478,6 +464,17 @@ def parse_gds(filepath: str) -> dict:
                     min_y = min(min_y, y)
                     max_y = max(max_y, y)
             it.next()
+
+    # Flush array-index diagnostics to a JSON log file next to the GDS.
+    if _DBG and _DBG_LOG:
+        import re as _re
+        log_path = _re.sub(r"\.gds$", ".array_debug.json", filepath, flags=_re.IGNORECASE)
+        try:
+            with open(log_path, "w", encoding="utf-8") as _f:
+                _json.dump(_DBG_LOG, _f, indent=2)
+        except Exception:
+            pass
+        _DBG_LOG.clear()
 
     result = {"type": "FeatureCollection", "features": features}
     if features:
