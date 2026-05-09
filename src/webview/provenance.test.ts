@@ -189,7 +189,7 @@ test('formatMentions includes loop and array indexes for Claude context', () => 
 
     assert.equal(
         formatMentions(locations),
-        '@dir/a.py:359 (loop index [2]) (array index [1, 3])'
+        '@dir/a.py:359 (array index [1, 3]) (loop index [2])'
     );
 });
 

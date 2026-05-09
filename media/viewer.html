@@ -466,8 +466,8 @@ function showMultiInspect(features) {
             comps.forEach(function(comp, ci) {
                 var bboxStr = '[' + comp.bbox.map(function(v) { return v.toFixed(4); }).join(', ') + ']';
                 var lineNum = comp.line !== null ? comp.line : '?';
-                var loopStr = comp.loop_index ? ' (loop index [' + comp.loop_index.join(', ') + '])' : '';
-                loopStr += comp.array_index ? ' (array index [' + comp.array_index.join(', ') + '])' : '';
+                var loopStr = comp.array_index ? ' (array index [' + comp.array_index.join(', ') + '])' : '';
+                loopStr += comp.loop_index ? ' (loop index [' + comp.loop_index.join(', ') + '])' : '';
                 addKV(panel, '', '  Component ' + (ci + 1) + ': Line ' + lineNum + loopStr + ', bbox:' + bboxStr);
             });
         });
@@ -519,13 +519,13 @@ function updateMultiSourcePanel(fileMap, features) {
 
             if (!compFile) return;
 
-            // Build index label
+            // Build index label — innermost repeat first, then outer
             var indexParts = [];
-            if (prov.loop_index && prov.loop_index.length > 0) {
-                indexParts.push('loop index [' + prov.loop_index.join(', ') + ']');
-            }
             if (prov.array_index && prov.array_index.length > 0) {
                 indexParts.push('array index [' + prov.array_index.join(', ') + ']');
+            }
+            if (prov.loop_index && prov.loop_index.length > 0) {
+                indexParts.push('loop index [' + prov.loop_index.join(', ') + ']');
             }
             var indexLabel = indexParts.length > 0 ? ' (' + indexParts.join(', ') + ')' : '';
 
@@ -603,8 +603,8 @@ function renderSourceLinks(filePath, entries, container, primaryFile) {
         var btn = document.createElement('button');
         btn.className = 'source-link' + (primaryFile && idx === 0 ? ' primary' : '');
         btn.type = 'button';
-        var loopStr = entry.loop_index ? ' (loop index [' + entry.loop_index.join(', ') + '])' : '';
-        loopStr += entry.array_index ? ' (array index [' + entry.array_index.join(', ') + '])' : '';
+        var loopStr = entry.array_index ? ' (array index [' + entry.array_index.join(', ') + '])' : '';
+        loopStr += entry.loop_index ? ' (loop index [' + entry.loop_index.join(', ') + '])' : '';
         btn.innerHTML = '<span class="loc">' + esc(filePath + ':' + entry.line) + '</span>'
             + '<span class="fn">' + loopStr + 'Open source</span>';
         btn.onclick = function(e) {
@@ -1183,11 +1183,11 @@ function showInspect(feature) {
         if (provenance.cell) addKV(d, 'cell', provenance.cell);
         if (provenance.file) {
             var fileLabel = provenance.file + ':' + provenance.line;
-            if (provenance.loop_index && provenance.loop_index.length > 0) {
-                fileLabel += ' (loop index [' + provenance.loop_index.join(', ') + '])';
-            }
             if (provenance.array_index && provenance.array_index.length > 0) {
                 fileLabel += ' (array index [' + provenance.array_index.join(', ') + '])';
+            }
+            if (provenance.loop_index && provenance.loop_index.length > 0) {
+                fileLabel += ' (loop index [' + provenance.loop_index.join(', ') + '])';
             }
             addKV(d, 'file', fileLabel);
         }

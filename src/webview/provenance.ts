@@ -97,7 +97,7 @@ export function formatSelectionForOutput(components: ComponentSelection[]): stri
             lines.push('   Source chain:');
             for (const location of chain) {
                 const fn = location.functionName ? ` (${location.functionName})` : '';
-                const loop = (location === chain[0] && provenance.loop_index)
+                const loop = (location === chain[0] && (provenance.loop_index || provenance.array_index))
                     ? formatLoopLabel(provenance)
                     : '';
                 lines.push(`   - ${location.file}:${location.line}${fn}${loop}`);
@@ -233,22 +233,25 @@ export function formatMentions(
 }
 
 export function formatLoopLabel(provenance: ComponentProvenance): string {
+    const parts: string[] = [];
+    // Innermost repeat first (KLayout array), then outer (Python loop)
     if (provenance.array_index && provenance.array_index.length > 0) {
-        return ` (array index [${provenance.array_index.join(', ')}])`;
+        parts.push(`(array index [${provenance.array_index.join(', ')}])`);
     }
     if (provenance.loop_index && provenance.loop_index.length > 0) {
-        return ` (loop index [${provenance.loop_index.join(', ')}])`;
+        parts.push(`(loop index [${provenance.loop_index.join(', ')}])`);
     }
-    return '';
+    return parts.length > 0 ? ` ${parts.join(' ')}` : '';
 }
 
 export function formatSourceLocationIndexLabel(location: SourceLocation): string {
     const parts: string[] = [];
-    if (location.loop_index && location.loop_index.length > 0) {
-        parts.push(`(loop index [${location.loop_index.join(', ')}])`);
-    }
+    // Innermost repeat first (KLayout array), then outer (Python loop)
     if (location.array_index && location.array_index.length > 0) {
         parts.push(`(array index [${location.array_index.join(', ')}])`);
+    }
+    if (location.loop_index && location.loop_index.length > 0) {
+        parts.push(`(loop index [${location.loop_index.join(', ')}])`);
     }
     return parts.length > 0 ? ` ${parts.join(' ')}` : '';
 }
