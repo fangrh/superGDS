@@ -343,59 +343,12 @@ def _compute_array_element_index(iterator):
             parent = parent * path[i].inst().cell_inst.trans
         parent_disp = parent.disp
 
-        # --- Gather all displacement sources for comparison ---
-        # Source A: iterator.itrans() — includes shape-local offsets
-        itrans_disp = iterator.itrans().disp
-
-        # Source B: inst.cell_inst.trans — the CellInstArray's cell_inst
-        inst_ci_trans = inst.cell_inst.trans
-        base_disp = (parent * inst_ci_trans).disp
-
-        # Source C: InstElement.cell_inst (if available) — element-specific
-        elem_ci_raw = getattr(path[array_path_idx], 'cell_inst', None)
-        has_elem_ci = elem_ci_raw is not None
-        elem_disp = base_disp  # fallback
-        if has_elem_ci:
-            try:
-                elem_ci_obj = elem_ci_raw() if callable(elem_ci_raw) else elem_ci_raw
-                elem_disp = (parent * elem_ci_obj.trans).disp
-            except Exception:
-                pass
-
-        # Deltas using each source
-        delta_base = (itrans_disp.x - base_disp.x, itrans_disp.y - base_disp.y)
-        delta_elem = (itrans_disp.x - elem_disp.x, itrans_disp.y - elem_disp.y)
-        delta_inst = (elem_disp.x - base_disp.x, elem_disp.y - base_disp.y)
-
-        # Use inst-level delta for solving (no shape-local contamination).
-        dx, dy = delta_inst
-
-        if _DBG:
-            _DBG_LOG.append({
-                "path_len": len(path),
-                "arr_idx": array_path_idx,
-                "na": na, "nb": nb,
-                "a": [a.x, a.y], "b": [b.x, b.y],
-                "det": a.x * b.y - a.y * b.x,
-                "parent_disp": [parent_disp.x, parent_disp.y],
-                "itrans_disp": [itrans_disp.x, itrans_disp.y],
-                "base_disp": [base_disp.x, base_disp.y],
-                "inst_ci_disp": [inst_ci_trans.disp.x, inst_ci_trans.disp.y],
-                "has_elem_ci": has_elem_ci,
-                "elem_disp": [elem_disp.x, elem_disp.y],
-                "delta_base": list(delta_base),
-                "delta_elem": list(delta_elem),
-                "delta_inst": list(delta_inst),
-            })
-
-        # Solve  col*a + row*b = [dx, dy]  via 2×2 Cramer's rule.
-        det = a.x * b.y - a.y * b.x
-        if det != 0:
-            col = round((dx * b.y - dy * b.x) / det)
-            row = round((a.x * dy - a.y * dx) / det)
-        else:
-            col = round(dx / a.x) if a.x != 0 else 0
-            row = round(dy / b.y) if b.y != 0 else 0
+        # InstElement.ia() / ib() give the exact per-element indices directly
+        # for both 2D (na>1, nb>1) and 1D (na=1 or nb=1) arrays — no coordinate
+        # arithmetic needed, and avoids Cramer's-rule edge cases.
+        elem = path[array_path_idx]
+        col = max(0, min(int(elem.ia()), na - 1)) if na > 1 else 0
+        row = max(0, min(int(elem.ib()), nb - 1)) if nb > 1 else 0
 
         result = [max(0, min(int(col), na - 1)), max(0, min(int(row), nb - 1))]
 
