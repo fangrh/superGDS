@@ -232,12 +232,12 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id, ports_b
     else:
         prov = dict(prov)
 
-    # Merge loop_index from the placement sidecar entry.
-    # The shape's own sidecar entry (from capture()) won't have loop_index,
-    # but the placement entry (from track_instance()) does. The link is
-    # instance_prov_id stored in the instance property 1005 tag
-    # (or shape property 1004 for backward compat).
-    if "loop_index" not in prov and sidecar_by_id:
+    # Resolve placement entry from sidecar for loop_index and instance_name.
+    # The shape's own sidecar entry (from capture()) may have loop_index
+    # already, but the placement entry (from track_instance()) has
+    # instance_path which contains the instance name.
+    placement_entry = None
+    if sidecar_by_id:
         instance_prov_id = None
         # Try instance property (1005) first — current approach
         try:
@@ -262,13 +262,17 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id, ports_b
                 pass
         if instance_prov_id is not None:
             placement_entry = sidecar_by_id.get(instance_prov_id)
-            if placement_entry and "loop_index" in placement_entry:
-                prov["loop_index"] = placement_entry["loop_index"]
-            # Extract instance name from placement entry's instance_path
-            if not instance_name and placement_entry:
-                inst_path = placement_entry.get("instance_path", "")
-                if inst_path and "/" in inst_path:
-                    instance_name = inst_path.rsplit("/", 1)[-1]
+
+    # Merge loop_index from placement entry (if not already present)
+    if "loop_index" not in prov and placement_entry:
+        if "loop_index" in placement_entry:
+            prov["loop_index"] = placement_entry["loop_index"]
+
+    # Extract instance name from placement entry's instance_path
+    if not instance_name and placement_entry:
+        inst_path = placement_entry.get("instance_path", "")
+        if inst_path and "/" in inst_path:
+            instance_name = inst_path.rsplit("/", 1)[-1]
 
     if instance_name:
         prov["instance_name"] = instance_name
