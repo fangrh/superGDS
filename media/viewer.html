@@ -264,8 +264,8 @@ function clearSelection() {
 }
 
 // Progressive Ctrl+A selection:
-//   0 → 1: select all features sharing the same instance_name (same placed instance)
-//   1 → 2: select all features from the same source line (same add_ref statement)
+//   0 → 1: select all elements of the same array instance (same instance_name base)
+//   1 → 2: select all elements sharing the same loop_index (same iteration level)
 //   2 → 0: clear selection
 function handleCtrlA() {
     var features = selectedFeatures.getArray();
@@ -289,20 +289,24 @@ function handleCtrlA() {
         if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
     } else if (selectionCycle === 1) {
-        // L2: group by file + line (same add_ref statement in source)
+        // L2: group by loop_index — only shapes that share the same loop iteration
         var anchor = selectedFeatures.getArray()[0];
         var prov = anchor ? anchor.get('provenance') || {} : {};
-        var anchorFile = prov.file || '';
-        var anchorLine = String(prov.line || '');
+        var anchorLoopIdx = prov.loop_index;
 
-        var sameSource = allFeatures.filter(function(f) {
+        var sameLoop = allFeatures.filter(function(f) {
             var fProv = f.get('provenance') || {};
-            return (fProv.file || '') === anchorFile && String(fProv.line || '') === anchorLine;
+            var fLoop = fProv.loop_index;
+            // Compare loop_index arrays (same iteration = same loop nesting + same values)
+            if (!fLoop && !anchorLoopIdx) return true;
+            if (!fLoop || !anchorLoopIdx) return false;
+            if (fLoop.length !== anchorLoopIdx.length) return false;
+            return fLoop.every(function(v, i) { return v === anchorLoopIdx[i]; });
         });
-        replaceSelection(sameSource);
+        replaceSelection(sameLoop);
         selectionCycle = 2;
         rewriteLabels('[:]');
-        var cycleText = ['', 'L1: same instance  Ctrl+A→L2', 'L2: same add_ref  Ctrl+A→clear'];
+        var cycleText = ['', 'L1: same instance  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
         var cycleEl = document.getElementById('cycle-indicator');
         if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
