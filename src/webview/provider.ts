@@ -290,6 +290,19 @@ function formatComponentMentions(components: ComponentSelection[]): string {
         if (instanceName) {
             lines.push(`  Ref: ${instanceName}`);
         }
+        const varName = components[i].provenance?.variable_name;
+        if (varName) {
+            lines.push(`  Var: ${varName}`);
+            if (components[i].provenance?.variable_in_loop) {
+                const plural = varName + 's';
+                lines.push(`  ⚠ loop variable — may be overwritten each iteration`);
+                lines.push(`  💡 store in array (e.g. ${plural}[i] = ${varName}) to reference by variable name`);
+            }
+            const arrayIndex = components[i].provenance?.array_index;
+            if (arrayIndex && arrayIndex.length > 0) {
+                lines.push(`  ⚠ array element — variable name refers to the whole array, not this individual element`);
+            }
+        }
         const ports = components[i].provenance?.ports;
         if (ports && ports.length > 0) {
             const portStr = ports.map((p) => {
