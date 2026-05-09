@@ -287,7 +287,7 @@ function handleCtrlA() {
         replaceSelection(sameArray);
         selectionCycle = 1;
         rewriteLabels('[:]');
-        var cycleText = ['', 'L1: same instance  Ctrl+A→L2', 'L2: same add_ref  Ctrl+A→clear'];
+        var cycleText = ['', 'L1: same array  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
         var cycleEl = document.getElementById('cycle-indicator');
         if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
