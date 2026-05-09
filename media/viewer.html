@@ -553,6 +553,15 @@ function updateMultiSourcePanel(fileMap, features) {
                 panel.appendChild(chainDiv);
             });
 
+            // Instance ref name
+            var instanceName = prov.instance_name;
+            if (instanceName) {
+                var refDiv = document.createElement('div');
+                refDiv.className = 'kv';
+                refDiv.innerHTML = '<span class="key" style="color:#585b70;">&nbsp;&nbsp;Ref</span><span class="val" style="color:#6c7086;">' + esc(instanceName) + '</span>';
+                panel.appendChild(refDiv);
+            }
+
             // Separator between components
             if (idx < features.length - 1) {
                 addSep(panel);
