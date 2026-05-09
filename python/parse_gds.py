@@ -275,6 +275,13 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id, ports_b
         if "loop_index" in placement_entry:
             prov["loop_index"] = placement_entry["loop_index"]
 
+    # Merge variable_name from placement entry (if not already present)
+    if "variable_name" not in prov and placement_entry:
+        if "variable_name" in placement_entry:
+            prov["variable_name"] = placement_entry["variable_name"]
+            if "variable_in_loop" in placement_entry:
+                prov["variable_in_loop"] = placement_entry["variable_in_loop"]
+
     # Extract instance name from placement entry's instance_path
     if not instance_name and placement_entry:
         inst_path = placement_entry.get("instance_path", "")
