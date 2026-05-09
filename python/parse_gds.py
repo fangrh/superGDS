@@ -303,10 +303,15 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id, ports_b
 def _compute_array_element_index(iterator):
     """Compute per-element [col, row] index for shapes inside array instances.
 
-    Uses the KLayout RecursiveShapeIterator's path to access the innermost
-    instance.  If it is an array (na > 1 or nb > 1), the element index is
-    computed from the transformation displacement relative to element [0, 0].
-    Returns a two-element list ``[col, row]`` or ``None``.
+    The KLayout RecursiveShapeIterator's path may contain multiple instances.
+    We walk the path to find the *innermost* array instance and compute the
+    per-element index from the displacement delta between the base cell
+    instance and the element-specific cell instance.  Inner arrays take
+    priority because they represent the closest repeat structure to the shape.
+
+    Uses InstElement-level transformations (cell_inst.trans) rather than
+    iterator.itrans() to avoid shape-local coordinate offsets that would
+    contaminate the array-element displacement computation.
     """
     import klayout.db as _kdb
 
@@ -315,24 +320,48 @@ def _compute_array_element_index(iterator):
         if not path:
             return None
 
-        inst = path[-1].inst()
-        na, nb = inst.na, inst.nb
-        if na <= 1 and nb <= 1:
+        # Walk path from innermost outward to find the first array instance.
+        array_path_idx = None
+        for idx in range(len(path) - 1, -1, -1):
+            inst = path[idx].inst()
+            if inst.na > 1 or inst.nb > 1:
+                array_path_idx = idx
+                break
+        if array_path_idx is None:
             return None
 
-        # Current element displacement (DBU integer).
-        cur_disp = iterator.itrans().disp
+        inst = path[array_path_idx].inst()
+        na, nb = inst.na, inst.nb
 
-        # Compute element-[0,0] displacement by composing parent chain
-        # and the instance's base transformation.
+        # Compose parent transforms (everything above the array instance).
         parent = _kdb.Trans()
-        for i in range(len(path) - 1):
+        for i in range(array_path_idx):
             parent = parent * path[i].inst().cell_inst.trans
+
+        # Base instance displacement (element [0,0] — no array offset).
         base_disp = (parent * inst.cell_inst.trans).disp
 
-        # Offset from element [0,0] in DBU.
-        dx = cur_disp.x - base_disp.x
-        dy = cur_disp.y - base_disp.y
+        # Element-specific instance displacement via InstElement.cell_inst.
+        # This gives the exact cell-instance for THIS path position without
+        # any shape-local coordinate contamination.
+        elem_ci = getattr(path[array_path_idx], 'cell_inst', None)
+        if elem_ci is not None:
+            try:
+                # cell_inst may be a property or a callable depending on
+                # the KLayout Python binding version.
+                if callable(elem_ci):
+                    elem_ci_obj = elem_ci()
+                else:
+                    elem_ci_obj = elem_ci
+                elem_disp = (parent * elem_ci_obj.trans).disp
+            except Exception:
+                elem_disp = base_disp
+        else:
+            elem_disp = base_disp
+
+        # Offset from element [0,0] in DBU (integer).
+        dx = elem_disp.x - base_disp.x
+        dy = elem_disp.y - base_disp.y
 
         # Array vectors in DBU (Vector — integer coordinates).
         a, b = inst.a, inst.b
