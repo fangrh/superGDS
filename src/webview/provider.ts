@@ -286,10 +286,9 @@ function formatComponentMentions(components: ComponentSelection[]): string {
         for (let j = 1; j < locations.length; j++) {
             lines.push(`  ← @${toWorkspaceRelativePath(locations[j].file)}#${locations[j].line}`);
         }
-        // Append port info if available
-        const ports = (components[i].provenance as any)?.ports;
-        if (Array.isArray(ports) && ports.length > 0) {
-            const portStr = ports.map((p: any) => {
+        const ports = components[i].provenance?.ports;
+        if (ports && ports.length > 0) {
+            const portStr = ports.map((p) => {
                 const c = p.center;
                 const loc = c ? `(${Number(c[0]).toFixed(1)}, ${Number(c[1]).toFixed(1)})` : '';
                 const orient = p.orientation !== undefined ? ` ${p.orientation}°` : '';

@@ -19,6 +19,7 @@ export interface ComponentProvenance {
     instance_name?: string;
     area_um2?: number;
     source_text?: string;
+    ports?: Array<{ name: string; center?: number[]; orientation?: number }>;
 }
 
 export interface ComponentSelection {
