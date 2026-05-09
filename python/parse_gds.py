@@ -264,6 +264,11 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id, ports_b
             placement_entry = sidecar_by_id.get(instance_prov_id)
             if placement_entry and "loop_index" in placement_entry:
                 prov["loop_index"] = placement_entry["loop_index"]
+            # Extract instance name from placement entry's instance_path
+            if not instance_name and placement_entry:
+                inst_path = placement_entry.get("instance_path", "")
+                if inst_path and "/" in inst_path:
+                    instance_name = inst_path.rsplit("/", 1)[-1]
 
     if instance_name:
         prov["instance_name"] = instance_name
