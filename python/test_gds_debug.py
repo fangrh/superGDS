@@ -91,5 +91,47 @@ class TestParseSummary(unittest.TestCase):
         self.assertEqual(summary["bbox"], [0, 0, 50, 10])
 
 
+class TestClick(unittest.TestCase):
+    def setUp(self):
+        self.features = [
+            _make_feature(x=0, y=0, w=10, h=10, provenance={"instance_name": "a_0", "cell": "rect"}),
+            _make_feature(x=20, y=0, w=10, h=10, provenance={"instance_name": "a_1", "cell": "rect"}),
+            _make_feature(x=0, y=20, w=10, h=10, provenance={"instance_name": "b_0", "cell": "circle"}),
+        ]
+        self.session = D.GdsSession.__new__(D.GdsSession)
+        self.session.features = self.features
+        self.session.bbox = [0, 0, 30, 30]
+        self.session._cache_hit = False
+
+    def test_click_nearest_centroid(self):
+        idx, dist = self.session.click(5, 5)
+        self.assertEqual(idx, 0)
+
+    def test_click_second_feature(self):
+        idx, dist = self.session.click(25, 5)
+        self.assertEqual(idx, 1)
+
+    def test_click_third_feature(self):
+        idx, dist = self.session.click(5, 25)
+        self.assertEqual(idx, 2)
+
+    def test_click_returns_distance(self):
+        idx, dist = self.session.click(25, 5)
+        self.assertAlmostEqual(dist, 0.0, places=1)
+
+    def test_click_index_valid(self):
+        feat = self.session.click_index(1)
+        self.assertEqual(feat["properties"]["provenance"]["instance_name"], "a_1")
+
+    def test_click_index_out_of_range(self):
+        self.assertIsNone(self.session.click_index(99))
+
+    def test_click_no_features(self):
+        empty = D.GdsSession.__new__(D.GdsSession)
+        empty.features = []
+        idx, dist = empty.click(0, 0)
+        self.assertIsNone(idx)
+
+
 if __name__ == "__main__":
     unittest.main()

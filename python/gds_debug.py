@@ -91,6 +91,44 @@ class GdsSession:
             "bbox": self.bbox,
         }
 
+    def click(self, x: float, y: float) -> tuple[int | None, float]:
+        """Find feature nearest to (x, y) by centroid distance."""
+        best_idx = None
+        best_dist = float("inf")
+        for i, feat in enumerate(self.features):
+            coords = feat.get("geometry", {}).get("coordinates", [[]])[0]
+            if len(coords) < 3:
+                continue
+            n = len(coords) - 1  # last point duplicates first
+            cx = sum(p[0] for p in coords[:n]) / n
+            cy = sum(p[1] for p in coords[:n]) / n
+            dist = ((cx - x) ** 2 + (cy - y) ** 2) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+        return best_idx, best_dist if best_idx is not None else float("inf")
+
+    def click_index(self, index: int) -> dict | None:
+        """Return feature at given index, or None."""
+        if 0 <= index < len(self.features):
+            return self.features[index]
+        return None
+
+
+def _format_feature(index: int, feat: dict, distance: float | None = None) -> dict:
+    """Extract the JSON output for a single feature."""
+    props = feat.get("properties", {})
+    result: dict = {
+        "status": "ok",
+        "index": index,
+        "layer": props.get("layer", ""),
+        "bbox": props.get("bbox", []),
+        "provenance": props.get("provenance", {}),
+    }
+    if distance is not None:
+        result["distance"] = round(distance, 4)
+    return result
+
 
 def _cmd_parse(args) -> dict:
     session = GdsSession(args.gds, use_cache=not args.no_cache)
@@ -99,6 +137,29 @@ def _cmd_parse(args) -> dict:
     summary["status"] = "ok"
     summary["cache"] = "hit" if session._cache_hit else "miss"
     return summary
+
+
+def _cmd_click(args) -> dict:
+    session = GdsSession(args.gds, use_cache=not args.no_cache)
+    session.parse()
+    cache_status = "hit" if session._cache_hit else "miss"
+    if args.at:
+        parts = args.at.split(",")
+        x, y = float(parts[0]), float(parts[1])
+        idx, dist = session.click(x, y)
+        if idx is None:
+            return {"status": "error", "message": f"No feature found near ({x}, {y})"}
+        result = _format_feature(idx, session.features[idx], dist)
+        result["cache"] = cache_status
+        return result
+    elif args.index is not None:
+        feat = session.click_index(args.index)
+        if feat is None:
+            return {"status": "error", "message": f"No feature at index {args.index}"}
+        result = _format_feature(args.index, feat)
+        result["cache"] = cache_status
+        return result
+    return {"status": "error", "message": "Specify --at x,y or --index N"}
 
 
 def main() -> None:
@@ -131,7 +192,7 @@ def main() -> None:
     try:
         handlers = {
             "parse": _cmd_parse,
-            "click": lambda a: {"status": "error", "message": "click not implemented yet"},
+            "click": _cmd_click,
             "ctrl-a": lambda a: {"status": "error", "message": "ctrl-a not implemented yet"},
             "diagnose": lambda a: {"status": "error", "message": "diagnose not implemented yet"},
         }
