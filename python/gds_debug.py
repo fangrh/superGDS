@@ -163,6 +163,73 @@ class GdsSession:
 
         return None
 
+    def diagnose(self) -> dict:
+        """Run provenance diagnostics on parsed features."""
+        total = len(self.features)
+        with_prov = 0
+        with_loop = 0
+        with_array = 0
+        loop_dist: dict[str, int] = {}
+        warnings: list[dict] = []
+
+        # cell -> set of instance_name values
+        cell_instances: dict[str, set[str]] = {}
+        # loop_index_key -> set of "file:line" sources
+        loop_sources: dict[str, set[str]] = {}
+
+        for feat in self.features:
+            prov = feat.get("properties", {}).get("provenance", {})
+            if not prov:
+                continue
+            with_prov += 1
+
+            if prov.get("loop_index"):
+                with_loop += 1
+                key = json.dumps(prov["loop_index"])
+                loop_dist[key] = loop_dist.get(key, 0) + 1
+                src = f"{prov.get('file', '?')}:{prov.get('line', '?')}"
+                if key not in loop_sources:
+                    loop_sources[key] = set()
+                loop_sources[key].add(src)
+
+            if prov.get("array_index"):
+                with_array += 1
+
+            cell = prov.get("cell", "")
+            inst = prov.get("instance_name", "")
+            if cell and inst:
+                if cell not in cell_instances:
+                    cell_instances[cell] = set()
+                cell_instances[cell].add(inst)
+
+        # shared_cell_overwrite: same cell placed under multiple instance names
+        for cell, instances in cell_instances.items():
+            if len(instances) > 1:
+                warnings.append({
+                    "type": "shared_cell_overwrite",
+                    "cell": cell,
+                    "placements": len(instances),
+                })
+
+        # ambiguous_loop_index: same loop_index from different source locations
+        for key, sources in loop_sources.items():
+            if len(sources) > 1:
+                warnings.append({
+                    "type": "ambiguous_loop_index",
+                    "loop_index": json.loads(key),
+                    "distinct_sources": len(sources),
+                    "files": sorted(sources),
+                })
+
+        return {
+            "total_features": total,
+            "with_provenance": with_prov,
+            "with_loop_index": with_loop,
+            "with_array_index": with_array,
+            "loop_index_distribution": loop_dist,
+            "warnings": warnings,
+        }
+
 
 def _format_feature(index: int, feat: dict, distance: float | None = None) -> dict:
     """Extract the JSON output for a single feature."""
@@ -239,6 +306,15 @@ def _cmd_ctrl_a(args) -> dict:
     }
 
 
+def _cmd_diagnose(args) -> dict:
+    session = GdsSession(args.gds, use_cache=not args.no_cache)
+    session.parse()
+    result = session.diagnose()
+    result["status"] = "ok"
+    result["cache"] = "hit" if session._cache_hit else "miss"
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="superGDS headless debug CLI")
     parser.add_argument("--no-cache", action="store_true", help="Force re-parse")
@@ -271,7 +347,7 @@ def main() -> None:
             "parse": _cmd_parse,
             "click": _cmd_click,
             "ctrl-a": _cmd_ctrl_a,
-            "diagnose": lambda a: {"status": "error", "message": "diagnose not implemented yet"},
+            "diagnose": _cmd_diagnose,
         }
         result = handlers[args.command](args)
     except Exception as e:

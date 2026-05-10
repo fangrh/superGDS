@@ -183,5 +183,75 @@ class TestCtrlA(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestDiagnose(unittest.TestCase):
+    def test_basic_counts(self):
+        features = [
+            _make_feature(provenance={"file": "a.py", "line": 1, "cell": "rect", "instance_name": "r_0", "loop_index": [0]}),
+            _make_feature(provenance={"file": "a.py", "line": 1, "cell": "rect", "instance_name": "r_1", "loop_index": [1]}),
+            _make_feature(provenance={}),
+        ]
+        session = D.GdsSession.__new__(D.GdsSession)
+        session.features = features
+        session._cache_hit = False
+        result = session.diagnose()
+        self.assertEqual(result["total_features"], 3)
+        self.assertEqual(result["with_provenance"], 2)
+        self.assertEqual(result["with_loop_index"], 2)
+        self.assertEqual(result["with_array_index"], 0)
+
+    def test_ambiguous_loop_index_warning(self):
+        features = [
+            _make_feature(provenance={"file": "top.py", "line": 10, "loop_index": [0], "instance_name": "a_0"}),
+            _make_feature(provenance={"file": "top.py", "line": 10, "loop_index": [1], "instance_name": "a_1"}),
+            _make_feature(provenance={"file": "top.py", "line": 20, "loop_index": [0], "instance_name": "b_0"}),
+        ]
+        session = D.GdsSession.__new__(D.GdsSession)
+        session.features = features
+        session._cache_hit = False
+        result = session.diagnose()
+        ambig = [w for w in result["warnings"] if w["type"] == "ambiguous_loop_index"]
+        self.assertEqual(len(ambig), 1)
+        self.assertEqual(ambig[0]["distinct_sources"], 2)
+
+    def test_shared_cell_overwrite_warning(self):
+        features = [
+            _make_feature(provenance={"cell": "rect", "instance_name": "r_0", "file": "a.py", "line": 1}),
+            _make_feature(provenance={"cell": "rect", "instance_name": "r_1", "file": "a.py", "line": 1}),
+            _make_feature(provenance={"cell": "rect", "instance_name": "r_2", "file": "a.py", "line": 1}),
+        ]
+        session = D.GdsSession.__new__(D.GdsSession)
+        session.features = features
+        session._cache_hit = False
+        result = session.diagnose()
+        shared = [w for w in result["warnings"] if w["type"] == "shared_cell_overwrite"]
+        self.assertEqual(len(shared), 1)
+        self.assertEqual(shared[0]["placements"], 3)
+
+    def test_no_warnings_clean_data(self):
+        features = [
+            _make_feature(provenance={"file": "a.py", "line": 1, "cell": "rect", "instance_name": "r_0"}),
+        ]
+        session = D.GdsSession.__new__(D.GdsSession)
+        session.features = features
+        session._cache_hit = False
+        result = session.diagnose()
+        self.assertEqual(result["warnings"], [])
+
+    def test_loop_index_distribution(self):
+        features = [
+            _make_feature(provenance={"loop_index": [0]}),
+            _make_feature(provenance={"loop_index": [1]}),
+            _make_feature(provenance={"loop_index": [2]}),
+            _make_feature(provenance={"loop_index": [0]}),
+        ]
+        session = D.GdsSession.__new__(D.GdsSession)
+        session.features = features
+        session._cache_hit = False
+        result = session.diagnose()
+        self.assertEqual(result["loop_index_distribution"]["[0]"], 2)
+        self.assertEqual(result["loop_index_distribution"]["[1]"], 1)
+        self.assertEqual(result["loop_index_distribution"]["[2]"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
