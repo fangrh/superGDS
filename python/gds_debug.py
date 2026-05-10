@@ -114,6 +114,55 @@ class GdsSession:
             return self.features[index]
         return None
 
+    @staticmethod
+    def _instance_base(name: str) -> str:
+        """Strip trailing _N suffix to get array identity."""
+        return re.sub(r"_(\d+)$", "", name)
+
+    def ctrl_a(self, anchor_index: int, level: int) -> dict | None:
+        """Simulate Ctrl+A L1/L2 grouping.
+
+        L1: group by instance_name base (strip _N suffix).
+        L2: group by loop_index array equality.
+        """
+        if anchor_index < 0 or anchor_index >= len(self.features):
+            return None
+
+        anchor_prov = self.features[anchor_index].get("properties", {}).get("provenance", {})
+
+        if level == 1:
+            group_base = self._instance_base(anchor_prov.get("instance_name", ""))
+            group = [
+                i for i, f in enumerate(self.features)
+                if self._instance_base(f.get("properties", {}).get("provenance", {}).get("instance_name", ""))
+                == group_base
+            ]
+            return {
+                "anchor_instance_base": group_base,
+                "group_indices": group,
+            }
+
+        if level == 2:
+            anchor_loop = anchor_prov.get("loop_index")
+            group = []
+            for i, f in enumerate(self.features):
+                fp = f.get("properties", {}).get("provenance", {})
+                fl = fp.get("loop_index")
+                if not fl and not anchor_loop:
+                    group.append(i)
+                elif not fl or not anchor_loop:
+                    continue
+                elif len(fl) != len(anchor_loop):
+                    continue
+                elif all(v == anchor_loop[j] for j, v in enumerate(fl)):
+                    group.append(i)
+            return {
+                "anchor_loop_index": anchor_loop,
+                "group_indices": group,
+            }
+
+        return None
+
 
 def _format_feature(index: int, feat: dict, distance: float | None = None) -> dict:
     """Extract the JSON output for a single feature."""
@@ -162,6 +211,34 @@ def _cmd_click(args) -> dict:
     return {"status": "error", "message": "Specify --at x,y or --index N"}
 
 
+def _cmd_ctrl_a(args) -> dict:
+    session = GdsSession(args.gds, use_cache=not args.no_cache)
+    session.parse()
+    result = session.ctrl_a(args.index, args.level)
+    if result is None:
+        return {"status": "error", "message": f"No feature at index {args.index}"}
+    # Build group_provenance list
+    group_prov = []
+    for i in result["group_indices"]:
+        prov = session.features[i].get("properties", {}).get("provenance", {})
+        entry = {"index": i}
+        if prov.get("instance_name"):
+            entry["instance_name"] = prov["instance_name"]
+        if prov.get("array_index"):
+            entry["array_index"] = prov["array_index"]
+        if prov.get("loop_index"):
+            entry["loop_index"] = prov["loop_index"]
+        group_prov.append(entry)
+    return {
+        "status": "ok",
+        "anchor_index": args.index,
+        "level": args.level,
+        "group_indices": result["group_indices"],
+        "group_provenance": group_prov,
+        "cache": "hit" if session._cache_hit else "miss",
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="superGDS headless debug CLI")
     parser.add_argument("--no-cache", action="store_true", help="Force re-parse")
@@ -193,7 +270,7 @@ def main() -> None:
         handlers = {
             "parse": _cmd_parse,
             "click": _cmd_click,
-            "ctrl-a": lambda a: {"status": "error", "message": "ctrl-a not implemented yet"},
+            "ctrl-a": _cmd_ctrl_a,
             "diagnose": lambda a: {"status": "error", "message": "diagnose not implemented yet"},
         }
         result = handlers[args.command](args)

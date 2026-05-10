@@ -133,5 +133,55 @@ class TestClick(unittest.TestCase):
         self.assertIsNone(idx)
 
 
+class TestCtrlA(unittest.TestCase):
+    def setUp(self):
+        # ring_0 through ring_5: 6 features with same instance_name base
+        # loop_index [0],[1],[2] from "loop A", then [0],[1],[2] from "loop B"
+        self.features = [
+            _make_feature(x=0, provenance={"instance_name": "ring_0", "cell": "ring", "loop_index": [0], "array_index": [0, 0]}),
+            _make_feature(x=20, provenance={"instance_name": "ring_1", "cell": "ring", "loop_index": [1], "array_index": [1, 0]}),
+            _make_feature(x=40, provenance={"instance_name": "ring_2", "cell": "ring", "loop_index": [2], "array_index": [2, 0]}),
+            _make_feature(x=60, provenance={"instance_name": "ring_3", "cell": "ring", "loop_index": [0], "array_index": [0, 0]}),
+            _make_feature(x=80, provenance={"instance_name": "ring_4", "cell": "ring", "loop_index": [1], "array_index": [1, 0]}),
+            _make_feature(x=100, provenance={"instance_name": "ring_5", "cell": "ring", "loop_index": [2], "array_index": [2, 0]}),
+            _make_feature(x=200, provenance={"instance_name": "waveguide_0", "cell": "wg"}),
+        ]
+        self.session = D.GdsSession.__new__(D.GdsSession)
+        self.session.features = self.features
+        self.session.bbox = [0, 0, 210, 10]
+        self.session._cache_hit = False
+
+    def test_l1_groups_by_instance_name_base(self):
+        result = self.session.ctrl_a(0, level=1)
+        self.assertEqual(result["anchor_instance_base"], "ring")
+        self.assertEqual(result["group_indices"], [0, 1, 2, 3, 4, 5])
+
+    def test_l1_excludes_different_base(self):
+        result = self.session.ctrl_a(6, level=1)
+        self.assertEqual(result["anchor_instance_base"], "waveguide")
+        self.assertEqual(result["group_indices"], [6])
+
+    def test_l2_groups_by_loop_index(self):
+        result = self.session.ctrl_a(0, level=2)
+        # loop_index [0] matches features 0 and 3
+        self.assertIn(0, result["group_indices"])
+        self.assertIn(3, result["group_indices"])
+        self.assertNotIn(1, result["group_indices"])
+
+    def test_l2_no_loop_index_groups_all_without(self):
+        features = [
+            _make_feature(x=0, provenance={"instance_name": "a_0"}),
+            _make_feature(x=20, provenance={"instance_name": "a_1"}),
+        ]
+        session = D.GdsSession.__new__(D.GdsSession)
+        session.features = features
+        result = session.ctrl_a(0, level=2)
+        self.assertEqual(result["group_indices"], [0, 1])
+
+    def test_ctrl_a_invalid_index(self):
+        result = self.session.ctrl_a(99, level=1)
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main()
