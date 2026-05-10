@@ -36,7 +36,7 @@ class GdsCache:
                 cached = pickle.load(f)
             if cached.get("gds_mtime") == os.path.getmtime(self._gds_path):
                 return cached.get("data")
-        except Exception:
+        except (pickle.UnpicklingError, EOFError, OSError, ValueError):
             pass
         return None
 
@@ -129,7 +129,12 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        handlers = {"parse": _cmd_parse}
+        handlers = {
+            "parse": _cmd_parse,
+            "click": lambda a: {"status": "error", "message": "click not implemented yet"},
+            "ctrl-a": lambda a: {"status": "error", "message": "ctrl-a not implemented yet"},
+            "diagnose": lambda a: {"status": "error", "message": "diagnose not implemented yet"},
+        }
         result = handlers[args.command](args)
     except Exception as e:
         result = {"status": "error", "message": str(e)}
