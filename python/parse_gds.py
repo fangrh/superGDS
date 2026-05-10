@@ -247,43 +247,81 @@ def _get_feature_provenance(iterator, provenance_by_cell, sidecar_by_id, ports_b
     # already, but the placement entry (from track_instance()) has
     # instance_path which contains the instance name.
     placement_entry = None
+    _inst_tag = None
+    _placement_tag = None
     if sidecar_by_id:
         instance_prov_id = None
         # Try instance property (1005) first — current approach
         try:
             path = iterator.path()
             if path:
-                inst_tag = _parse_json_property(
+                _inst_tag = _parse_json_property(
                     path[-1].inst().property(INSTANCE_PROP_KEY)
                 )
-                if inst_tag and "instance_prov_id" in inst_tag:
-                    instance_prov_id = inst_tag["instance_prov_id"]
+                if _inst_tag and "instance_prov_id" in _inst_tag:
+                    instance_prov_id = _inst_tag["instance_prov_id"]
         except Exception:
             pass
         # Fallback: shape property (1004) — legacy approach
         if instance_prov_id is None:
             try:
-                placement_tag = _parse_json_property(
+                _placement_tag = _parse_json_property(
                     iterator.shape().property(PLACEMENT_PROP_KEY)
                 )
-                if placement_tag and "instance_prov_id" in placement_tag:
-                    instance_prov_id = placement_tag["instance_prov_id"]
+                if _placement_tag and "instance_prov_id" in _placement_tag:
+                    instance_prov_id = _placement_tag["instance_prov_id"]
             except Exception:
                 pass
         if instance_prov_id is not None:
             placement_entry = sidecar_by_id.get(instance_prov_id)
 
-    # Merge loop_index from placement entry (if not already present)
-    if "loop_index" not in prov and placement_entry:
+    # Merge loop_index from placement entry — always prefer placement over
+    # creation, because cached components retain the FIRST creation's
+    # loop_index which is wrong for subsequent placements.
+    if placement_entry:
         if "loop_index" in placement_entry:
             prov["loop_index"] = placement_entry["loop_index"]
+        elif "loop_index" in prov:
+            # Placement is outside any loop — remove stale creation loop_index
+            del prov["loop_index"]
 
-    # Merge variable_name from placement entry (if not already present)
-    if "variable_name" not in prov and placement_entry:
+    # Same for variable_name: prefer placement context over creation.
+    if placement_entry:
         if "variable_name" in placement_entry:
             prov["variable_name"] = placement_entry["variable_name"]
             if "variable_in_loop" in placement_entry:
                 prov["variable_in_loop"] = placement_entry["variable_in_loop"]
+        else:
+            prov.pop("variable_name", None)
+            prov.pop("variable_in_loop", None)
+
+    # Override source location with placement context when available.
+    # For cached/reused components, the shape's sidecar entry has the CREATION
+    # line (where the component was first defined), but the user expects to see
+    # the PLACEMENT line (where they placed it in the layout).
+    _src_tag = _inst_tag or _placement_tag
+    if _src_tag:
+        if "line" in _src_tag:
+            prov["line"] = _src_tag["line"]
+        if "file" in _src_tag:
+            prov["file"] = _src_tag["file"]
+        if "source_text" in _src_tag:
+            prov["source_text"] = _src_tag["source_text"]
+        prov["placement_line"] = _src_tag.get("line")
+
+    # Also rebuild call_chain from placement entry when available.
+    if placement_entry:
+        primary_file = placement_entry.get("file", "")
+        primary_dir = os.path.dirname(primary_file) if primary_file else ""
+        new_chain = [{"file": primary_file, "line": placement_entry["line"], "function": placement_entry.get("function", "")}]
+        for frame_str in placement_entry.get("call_stack", []):
+            parsed = _parse_call_stack_string(frame_str)
+            if parsed is not None:
+                if primary_dir and not os.path.isabs(parsed["file"]):
+                    parsed = {**parsed, "file": os.path.join(primary_dir, parsed["file"])}
+                new_chain.append(parsed)
+        if new_chain:
+            prov["call_chain"] = new_chain
 
     # Extract instance name from placement entry's instance_path
     if not instance_name and placement_entry:

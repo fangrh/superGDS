@@ -271,40 +271,35 @@ function handleCtrlA() {
     var features = selectedFeatures.getArray();
 
     if (selectionCycle === 0) {
-        // L1: group by instance_name base (same array — strip _N suffix)
+        // L1: group by exact instance_name (same add_ref call, all array elements)
         if (features.length === 0) return;
         var anchor = features[0];
         var prov = anchor.get('provenance') || {};
-        var anchorInst = prov.instance_name || '';
-        // Group base: strip the _N suffix to get array identity
-        var groupBase = anchorInst.replace(/_(\d+)$/, '');
+        var groupInst = prov.instance_name || '';
 
-        var sameArray = allFeatures.filter(function(f) {
+        var sameInstance = allFeatures.filter(function(f) {
             var fProv = f.get('provenance') || {};
-            var fInst = fProv.instance_name || '';
-            return fInst.replace(/_(\d+)$/, '') === groupBase;
+            return (fProv.instance_name || '') === groupInst;
         });
-        replaceSelection(sameArray);
+        replaceSelection(sameInstance);
         selectionCycle = 1;
         rewriteLabels('[:]');
-        var cycleText = ['', 'L1: same array  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
+        var cycleText = ['', 'L1: same instance  Ctrl+A→L2', 'L2: same loop  Ctrl+A→clear'];
         var cycleEl = document.getElementById('cycle-indicator');
         if (cycleEl) { cycleEl.textContent = cycleText[selectionCycle]; cycleEl.style.display = selectionCycle > 0 ? 'block' : 'none'; }
 
     } else if (selectionCycle === 1) {
-        // L2: group by loop_index — only shapes that share the same loop iteration
+        // L2: expand to all iterations of the same for-loop (same placement_line)
         var anchor = selectedFeatures.getArray()[0];
         var prov = anchor ? anchor.get('provenance') || {} : {};
-        var anchorLoopIdx = prov.loop_index;
+        var anchorPLine = prov.placement_line;
 
         var sameLoop = allFeatures.filter(function(f) {
             var fProv = f.get('provenance') || {};
-            var fLoop = fProv.loop_index;
-            // Compare loop_index arrays (same iteration = same loop nesting + same values)
-            if (!fLoop && !anchorLoopIdx) return true;
-            if (!fLoop || !anchorLoopIdx) return false;
-            if (fLoop.length !== anchorLoopIdx.length) return false;
-            return fLoop.every(function(v, i) { return v === anchorLoopIdx[i]; });
+            var fPLine = fProv.placement_line;
+            if (anchorPLine !== undefined && fPLine === anchorPLine) return true;
+            if (anchorPLine === undefined && fPLine === undefined) return true;
+            return false;
         });
         replaceSelection(sameLoop);
         selectionCycle = 2;
@@ -315,6 +310,7 @@ function handleCtrlA() {
 
     } else {
         // Cycle complete: clear and reset
+        rewriteLabels('');
         clearSelection();
         selectionCycle = 0;
         var cycleEl = document.getElementById('cycle-indicator');
@@ -322,14 +318,14 @@ function handleCtrlA() {
     }
 }
 
-// Rewrite array_index/loop_index labels on selected features to a given display string.
-// Only one label per unique instance_name base is shown.
+// Rewrite labels on selected features. For grouped selection, show one
+// [:] label per unique instance so each array group is marked.
 function rewriteLabels(label) {
     var shown = {};
     selectedFeatures.forEach(function(f) {
         var prov = f.get('provenance') || {};
         var instName = prov.instance_name || '';
-        var groupKey = instName.replace(/_(\d+)$/, '');
+        var groupKey = instName;
 
         if (label === '[:]') {
             // For grouped selection, show label only on first element per array
@@ -734,7 +730,22 @@ var vectorLayer = new ol.layer.Vector({
     source: source,
     style: function(feature) {
         var selected = feature.get('selected');
-        if (selected) return highlightStyle;
+        var labelText = feature.get('label');
+        if (selected) {
+            if (labelText) {
+                return new ol.style.Style({
+                    stroke: new ol.style.Stroke({ color: '#ffffff', width: 3 }),
+                    fill: new ol.style.Fill({ color: 'rgba(255,255,255,0.3)' }),
+                    text: new ol.style.Text({
+                        text: labelText,
+                        font: '10px monospace',
+                        fill: new ol.style.Fill({ color: '#f9e2af' }),
+                        stroke: new ol.style.Stroke({ color: '#1a1a2e', width: 2 })
+                    })
+                });
+            }
+            return highlightStyle;
+        }
         var color = feature.get('color') || '#fff';
         var visible = feature.get('visible') !== false;
         if (!visible) return new ol.style.Style({});
@@ -742,7 +753,6 @@ var vectorLayer = new ol.layer.Vector({
             stroke: new ol.style.Stroke({ color: color, width: 1 }),
             fill: new ol.style.Fill({ color: color + '80' })
         });
-        var labelText = feature.get('label');
         if (labelText) {
             style.setText(new ol.style.Text({
                 text: labelText,
@@ -794,7 +804,8 @@ selectClick.on('select', function(e) {
 
     selectClick.getFeatures().clear();
     if (!ctrlPressed) {
-        // Normal single selection: reset cycle
+        // Normal single selection: reset cycle and restore labels
+        rewriteLabels('');
         selectionCycle = 0;
         var cycleEl = document.getElementById('cycle-indicator');
         if (cycleEl) { cycleEl.textContent = ''; cycleEl.style.display = 'none'; }

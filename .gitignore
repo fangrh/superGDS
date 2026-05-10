@@ -8,3 +8,4 @@ gds/
 gds_test/
 gdsfactory/
 .omx/
+.gstack/

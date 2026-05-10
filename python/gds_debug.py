@@ -114,16 +114,11 @@ class GdsSession:
             return self.features[index]
         return None
 
-    @staticmethod
-    def _instance_base(name: str) -> str:
-        """Strip trailing _N suffix to get array identity."""
-        return re.sub(r"_(\d+)$", "", name)
-
     def ctrl_a(self, anchor_index: int, level: int) -> dict | None:
         """Simulate Ctrl+A L1/L2 grouping.
 
-        L1: group by instance_name base (strip _N suffix).
-        L2: group by loop_index array equality.
+        L1: group by exact instance_name (same add_ref call, all array elements).
+        L2: group by loop_index + placement_line (same for-loop iteration).
         """
         if anchor_index < 0 or anchor_index >= len(self.features):
             return None
@@ -131,33 +126,29 @@ class GdsSession:
         anchor_prov = self.features[anchor_index].get("properties", {}).get("provenance", {})
 
         if level == 1:
-            group_base = self._instance_base(anchor_prov.get("instance_name", ""))
+            group_inst = anchor_prov.get("instance_name", "")
             group = [
                 i for i, f in enumerate(self.features)
-                if self._instance_base(f.get("properties", {}).get("provenance", {}).get("instance_name", ""))
-                == group_base
+                if f.get("properties", {}).get("provenance", {}).get("instance_name", "")
+                == group_inst
             ]
             return {
-                "anchor_instance_base": group_base,
+                "anchor_instance_name": group_inst,
                 "group_indices": group,
             }
 
         if level == 2:
-            anchor_loop = anchor_prov.get("loop_index")
+            anchor_pline = anchor_prov.get("placement_line")
             group = []
             for i, f in enumerate(self.features):
                 fp = f.get("properties", {}).get("provenance", {})
-                fl = fp.get("loop_index")
-                if not fl and not anchor_loop:
+                fpline = fp.get("placement_line")
+                if anchor_pline is not None and fpline == anchor_pline:
                     group.append(i)
-                elif not fl or not anchor_loop:
-                    continue
-                elif len(fl) != len(anchor_loop):
-                    continue
-                elif all(v == anchor_loop[j] for j, v in enumerate(fl)):
+                elif anchor_pline is None and fpline is None:
                     group.append(i)
             return {
-                "anchor_loop_index": anchor_loop,
+                "anchor_placement_line": anchor_pline,
                 "group_indices": group,
             }
 
